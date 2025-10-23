@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Java compiled class files
+*.class
+
+# OS-generated files
+.DS_Store
+Thumbs.db
