@@ -1,3 +1,4 @@
+// Se creó el DTO Top producto
 package com.colors.savd.dto;
 
 import lombok.*;
