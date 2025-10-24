@@ -1,4 +1,3 @@
-//Se añadio el DTO Venta Manual
 package com.colors.savd.dto;
 
 import jakarta.validation.constraints.*;

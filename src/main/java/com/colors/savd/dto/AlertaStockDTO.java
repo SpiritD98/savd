@@ -1,4 +1,3 @@
-//Se subieron las clases DTO
 package com.colors.savd.dto;
 
 import lombok.*;
