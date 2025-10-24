@@ -7,21 +7,20 @@ import com.colors.savd.model.enums.EstatusRegistro;
 import jakarta.persistence.*;
 import lombok.*;
 
-@Entity
-@Table(name = "tipo_temporada", uniqueConstraints = {
-  @UniqueConstraint(name = "uq_tipo_temporada__codigo", columnNames = "codigo")
-})
+
+@Entity @Table(name = "talla_alias")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor
-public class TipoTemporada {
+public class TallaAlias {
 
   @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
-  @Column(nullable = false, length = 40)
-  private String codigo; // TEMPORADA, DROP, CAMPANIA
+  @ManyToOne(fetch = FetchType.LAZY, optional = false)
+  @JoinColumn(name = "talla_id", foreignKey = @ForeignKey(name = "fk_talla_alias__talla"))
+  private Talla talla;
 
-  @Column(nullable = false, length = 100)
-  private String nombre;
+  @Column(nullable = false, length = 60, unique = true)
+  private String alias; // ej. CH, Mediana, 30x32
 
   @Enumerated(EnumType.STRING)
   @Column(name = "estatus_registro", nullable = false, length = 12)
@@ -33,4 +32,3 @@ public class TipoTemporada {
   @Column(name = "updated_at", nullable = false)
   private LocalDateTime updatedAt;
 }
-
