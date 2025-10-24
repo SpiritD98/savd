@@ -1,10 +1,11 @@
 package com.colors.savd.repository;
 
-import com.colors.savd.model.CanalVenta;
+import java.util.Optional;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
+import com.colors.savd.model.CanalVenta;
 
 @Repository
 public interface CanalVentaRepository extends JpaRepository<CanalVenta, Long> {

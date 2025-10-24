@@ -33,6 +33,7 @@ public class ImportacionServiceImpl implements ImportacionService {
   private final VentaDetalleRepository ventaDetRepo;
   private final KardexRepository kardexRepo;
   private final ExcelUtil excelUtil;
+  private final UsuarioRepository usuarioRepo;
 
   @Override
   @Transactional
@@ -40,7 +41,7 @@ public class ImportacionServiceImpl implements ImportacionService {
     // 1) Crear bitácora
     BitacoraCarga bit = new BitacoraCarga();
     bit.setFechaHora(LocalDateTime.now());
-    bit.setUsuario(Usuario.builder().id(usuarioId).build()); // o cargar de repo si prefieres
+    bit.setUsuario(usuarioRepo); // o cargar de repo si prefieres
     bit.setTipoCarga(TipoCarga.VENTAS);
     bit.setArchivoNombre(nombreArchivo);
     bit.setFilasOk(0);
