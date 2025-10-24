@@ -8,5 +8,4 @@ import java.util.Optional;
 
 @Repository
 public interface TipoMovimientoRepository extends JpaRepository<TipoMovimiento, Long> {
-  Optional<TipoMovimiento> findByCodigo(String codigo);
-}
+  Optional<TipoMovimiento> findByCodigo(String codigo);}
