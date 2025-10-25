@@ -127,9 +127,8 @@ public class ImportacionServiceImpl implements ImportacionService {
 
           // Armar item
           ParsedItem item = new ParsedItem();
-          item.filaExcel = i + 1;
           item.skuId = sku.getId();
-          item.skuStr = sku.getSku();
+          sku.getSku();
           item.cantidad = cantidad;
           item.precioUnit = precioUnit;
           item.precioLista = (precioLista != null ? precioLista : sku.getPrecioLista());

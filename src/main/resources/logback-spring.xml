@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true">
+  <!-- Niveles por defecto -->
+  <property name="LOG_LEVEL_ROOT" value="INFO"/>
+
+  <!-- Appender a consola -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n</pattern>
+      <immediateFlush>true</immediateFlush>
+    </encoder>
+  </appender>
+
+  <!-- (Opcional) Rolling file -->
+  <property name="LOG_PATH" value="logs"/>
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${LOG_PATH}/savd.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+      <fileNamePattern>${LOG_PATH}/savd.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+      <maxHistory>7</maxHistory>
+    </rollingPolicy>
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Loggers específicos (ajústalos si quieres) -->
+  <logger name="org.hibernate.SQL" level="WARN"/>
+  <logger name="org.springframework" level="INFO"/>
+  <logger name="com.colors.savd" level="DEBUG"/>
+
+  <!-- Root -->
+  <root level="${LOG_LEVEL_ROOT}">
+    <appender-ref ref="CONSOLE"/>
+    <!-- <appender-ref ref="FILE"/> -->
+  </root>
+</configuration>
