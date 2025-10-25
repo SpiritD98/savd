@@ -2,7 +2,6 @@ package com.colors.savd.util;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -16,7 +15,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.CreationHelper;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.FillPatternType;
@@ -159,7 +157,6 @@ public class ExcelUtil {
     public byte[] crearReporteEjecutivo(List<TopProductoDTO> top, List<AlertaStockDTO> alertas){
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream bos = new ByteArrayOutputStream()){
             CellStyle header = crearHeaderStyle(wb);
-            CreationHelper ch = wb.getCreationHelper();
 
             //Hoja 1: Top-15
             Sheet s1 = wb.createSheet("Top15");
