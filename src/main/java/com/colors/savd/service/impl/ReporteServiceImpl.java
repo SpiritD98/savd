@@ -82,7 +82,6 @@ public class ReporteServiceImpl implements ReporteService{
         return out;
     }
 
-
     @Override
     @Transactional(readOnly = true)
     public byte[] exportarReporteEjecutivo(LocalDateTime desde, LocalDateTime hasta, Long canalId) {
