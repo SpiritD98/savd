@@ -11,10 +11,11 @@ import org.apache.poi.ss.usermodel.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.colors.savd.dto.ImportOpcionesDTO;
 import com.colors.savd.dto.ImportResultadoDTO;
 import com.colors.savd.exception.BusinessException;
 import com.colors.savd.model.*;
-import com.colors.savd.model.enums.TipoCarga;
+import com.colors.savd.model.enums.*;
 import com.colors.savd.repository.*;
 import com.colors.savd.service.ImportacionService;
 import com.colors.savd.util.ExcelUtil;
@@ -40,6 +41,7 @@ public class ImportacionServiceImpl implements ImportacionService {
   private final CanalVentaRepository canalRepo;
   private final TipoMovimientoRepository tipoMovRepo;
   private final UsuarioRepository usuarioRepo;
+  private final TemporadaRepository temporadaRepo;
   private final ExcelUtil excelUtil;
 
   // ====== Tipos y helpers internos ======
@@ -59,7 +61,7 @@ public class ImportacionServiceImpl implements ImportacionService {
 
   @Override
   @Transactional
-  public ImportResultadoDTO importarVentasExcel(InputStream in, String nombreArchivo, Long usuarioId) {
+  public ImportResultadoDTO importarVentasExcel(InputStream in, String nombreArchivo, Long usuarioId, ImportOpcionesDTO opciones) {
     // ==== 1) Crear bitácora ====
     BitacoraCarga bit = new BitacoraCarga();
     bit.setFechaHora(LocalDateTime.now());
@@ -83,24 +85,34 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     try (Workbook wb = WorkbookFactory.create(in)) {
       Sheet sheet = wb.getSheetAt(0);
-      Row header = sheet.getRow(0);
-      if (header == null) {
-        throw new IllegalArgumentException("El archivo no contiene encabezados.");
-      }
 
-      for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+      // === detectar encabezados dinamicamente ===
+      Map<String, List<String>> aliases = ExcelUtil.defaultAliases();
+      // Consideramos obligatorios en encabezado (Referencia puede venir vacia pero la columna idealmente existe):
+      // Si deseas permitir archivos sin columna Referencia, elimina "Referencia" de requiredKeys.
+      Set<String> requiredKeys = new LinkedHashSet<>(Arrays.asList("FechaHora", "CanalCodigo", "SKU", "Cantidad", "PrecioUnitario"));
+      ExcelUtil.HeaderMapping hm = excelUtil.detectarEncabezados(sheet, aliases, requiredKeys, 50);
+
+      int startRow = hm.getHeaderRowIndex() + 1;
+      for (int i = startRow; i <= sheet.getLastRowNum(); i++) {
         Row row = sheet.getRow(i);
         if (row == null) continue;
 
         try {
-          // --- Leer columnas obligatorias ---
-          LocalDateTime fechaHora = excelUtil.leerFechaHora(row.getCell(0));
-          String canalCodigo      = excelUtil.leerString(row.getCell(1));
-          String referencia       = excelUtil.leerString(row.getCell(2));
-          String skuStr           = excelUtil.leerString(row.getCell(3));
-          Integer cantidad        = excelUtil.leerEntero(row.getCell(4));
-          BigDecimal precioUnit   = excelUtil.leerDecimal(row.getCell(5));
-          BigDecimal precioLista  = excelUtil.leerDecimal(row.getCell(6)); // opcional
+          // --- Leer por nombre de columnas ---
+          LocalDateTime fechaHora = excelUtil.leerFechaHora(getCell(row, hm.col("FechaHora")));
+          String canalCodigo = excelUtil.leerString(getCell(row, hm.col("CanalCodigo")));
+
+          //"Referencia" puede no estar en el encabezado si no es obligatorio
+          Integer colRef = hm.col("Referencia");
+          String referencia = (colRef != null) ? excelUtil.leerString(getCell(row, colRef)) : null;
+
+          String skuStr           = excelUtil.leerString(getCell(row, hm.col("SKU")));
+          Integer cantidad        = excelUtil.leerEntero(getCell(row, hm.col("Cantidad")));
+          BigDecimal precioUnit   = excelUtil.leerDecimal(getCell(row, hm.col("PrecioUnitario")));
+
+          Integer colPL = hm.col("PrecioLista");
+          BigDecimal precioLista  = (colPL != null) ? excelUtil.leerDecimal(getCell(row, colPL)) : null;
 
           if (fechaHora == null || StringUtils.isBlank(canalCodigo) ||
               StringUtils.isBlank(skuStr) || cantidad == null || cantidad <= 0 ||
@@ -127,8 +139,9 @@ public class ImportacionServiceImpl implements ImportacionService {
 
           // Armar item
           ParsedItem item = new ParsedItem();
+          item.filaExcel = i + 1;
           item.skuId = sku.getId();
-          sku.getSku();
+          item.skuStr = skuStr;
           item.cantidad = cantidad;
           item.precioUnit = precioUnit;
           item.precioLista = (precioLista != null ? precioLista : sku.getPrecioLista());
@@ -149,6 +162,7 @@ public class ImportacionServiceImpl implements ImportacionService {
           be.setCampo("GENERAL");
           be.setMensajeError(e.getMessage());
           be.setFechaHoraRegistro(LocalDateTime.now());
+          //be.setValorOriginal();
           bitErrorRepo.save(be);
 
           log.error("Error importando fila {}: {}", i + 1, e.getMessage(), e);
@@ -163,6 +177,9 @@ public class ImportacionServiceImpl implements ImportacionService {
     TipoMovimiento tipoVenta = tipoMovRepo.findByCodigo("VENTA")
         .orElseThrow(() -> new BusinessException("TipoMovimiento 'VENTA' no configurado"));
     Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+
+    // Observacion que pondremos en kardex 
+    final String observacionBase = construirObservacionBase(nombreArchivo, opciones);
 
     for (Map.Entry<CabKey, List<ParsedItem>> entry : grupos.entrySet()) {
       CabKey cab = entry.getKey();
@@ -180,12 +197,16 @@ public class ImportacionServiceImpl implements ImportacionService {
         continue; // saltar venta completa
       }
 
+      // ===== Asignacion de temporada segun opciones =====
+      Temporada temporadaAsignada = resolvTemporadaPara(cab.fechaHora(), opciones);
+
       // Crear cabecera
       Venta v = new Venta();
       v.setFechaHora(cab.fechaHora());
       v.setCanal(canal);
       v.setReferenciaOrigen(ref);
-      v.setEstado(com.colors.savd.model.enums.EstadoVenta.ACTIVA);
+      v.setTemporada(temporadaAsignada);
+      v.setEstado(EstadoVenta.ACTIVA);
       v.setTotal(BigDecimal.ZERO);
       v.setCreatedAt(LocalDateTime.now());
       v.setUpdatedAt(LocalDateTime.now());
@@ -224,6 +245,7 @@ public class ImportacionServiceImpl implements ImportacionService {
         k.setReferencia(v.getReferenciaOrigen());
         k.setUsuario(userRef);
         k.setCreatedAt(LocalDateTime.now());
+        k.setObservacion(observacionBase);
         // idempotency: hash reproducible por (ventaId, detId, "VENTA")
         k.setIdempotencyKey(generarIdemKey(v.getId(), det.getId(), "VENTA"));
         kardexRepo.save(k);
@@ -245,6 +267,38 @@ public class ImportacionServiceImpl implements ImportacionService {
         .filasError(err)
         .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
         .build();
+  }
+
+  // === Helpers ===
+  private Cell getCell(Row row, Integer colIndex){
+    if (row == null || colIndex == null) return null;
+    return row.getCell(colIndex);
+  }
+
+  private Temporada resolvTemporadaPara(LocalDateTime fechaHora, ImportOpcionesDTO opciones){
+    if (opciones == null || opciones.getModoTemporada() == null) {
+      return temporadaRepo.findActivaQueContenga(fechaHora.toLocalDate()).orElse(null);
+    }
+    AsignacionTemporadaModo modo = opciones.getModoTemporada();
+    return switch (modo){
+      case AUTOMATICA -> temporadaRepo.findActivaQueContenga(fechaHora.toLocalDate()).orElse(null);
+      case FIJAR -> {
+        if (opciones.getTemporadaId() == null) {
+          throw new BusinessException("Se requiere temporadaId cuando el modo es FIJAR.");
+        }
+        Temporada t = temporadaRepo.findActivaById(opciones.getTemporadaId()).orElseThrow(() -> new BusinessException("Temporada fija no encontrada o no activa."));
+        yield t;
+      }
+      case NINGUNA -> null;
+    };
+  }
+
+  private String construirObservacionBase(String nombreArchivo, ImportOpcionesDTO opciones){
+    StringBuilder sb = new StringBuilder("Importacion Excel: ").append(nombreArchivo);
+    if (opciones != null && StringUtils.isNotBlank(opciones.getObservacionGeneral())) {
+      sb.append(" | ").append(opciones.getObservacionGeneral().trim());
+    }
+    return sb.toString();
   }
 
   private String generarIdemKey(Long ventaId, Long detId, String tipo) {

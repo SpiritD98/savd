@@ -2,29 +2,16 @@ package com.colors.savd.util;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
+import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.CellType;
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.FillPatternType;
-import org.apache.poi.ss.usermodel.Font;
-import org.apache.poi.ss.usermodel.HorizontalAlignment;
-import org.apache.poi.ss.usermodel.IndexedColors;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.VerticalAlignment;
-import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
 
@@ -47,6 +34,137 @@ public class ExcelUtil {
         DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss"),
         DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")
     );
+
+    // ==================== Detección de encabezados ====================
+    /* Resultado de la deteccion: fila de encabezados + mapping col */
+    public static class HeaderMapping {
+        private final int headerRowIndex;
+        private final Map<String, Integer> colIndexByKey;
+
+        public HeaderMapping(int headerRowIndex, Map<String, Integer> colIndexByKey){
+            this.headerRowIndex = headerRowIndex;
+            this.colIndexByKey = Collections.unmodifiableMap(colIndexByKey);
+        }
+        public int getHeaderRowIndex(){ return headerRowIndex; }
+        public Map<String, Integer> getColIndexByKey(){ return colIndexByKey; }
+
+        /* Atajo para obtener el indice de una clave */
+        public Integer col(String key) { return colIndexByKey.get(key); }
+    }
+
+    /**
+     * Aliases por defecto para cada campo canónico.
+     * Puedes ajustar/añadir variantes según tus archivos reales.
+     */
+    public static Map<String, List<String>> defaultAliases(){
+        Map<String, List<String>> m = new LinkedHashMap<>();
+        m.put("FechaHora",      List.of("FECHAHORA","FECHA HORA","FECHA/HORA","FECHA","DATE","DATETIME"));
+        m.put("CanalCodigo",    List.of("CANALCODIGO","CANAL","CHANNEL"));
+        m.put("Referencia",     List.of("REFERENCIA","REF","NRODOC","TICKET","COMPROBANTE"));
+        m.put("SKU",            List.of("SKU","CODIGOSKU","PRODUCTOSKU","ITEM","CODIGO"));
+        m.put("Cantidad",       List.of("CANTIDAD","QTY","UNIDADES","CANT."));
+        m.put("PrecioUnitario", List.of("PRECIOUNITARIO","PU","PRECIO U.","PRECIO U"));
+        // Campo opcional:
+        m.put("PrecioLista",    List.of("PRECIOLISTA","PL","LISTA","P. LISTA"));
+        return m;
+    }
+
+    /**
+     * Detecta la fila de encabezados buscando, en las primeras 'maxScanRows' filas,
+     * si aparecen TODOS los campos obligatorios (por sus alias).
+     *
+     * @param sheet hoja a inspeccionar
+     * @param aliases mapa de claveCanónica -> lista de alias aceptados
+     * @param requiredKeys claves canónicas obligatorias (ej: FechaHora, CanalCodigo, Referencia, SKU, Cantidad, PrecioUnitario)
+     * @param maxScanRows filas superiores a escanear (ej: 50)
+     * @return HeaderMapping con fila e índices; lanza IllegalArgumentException si no los encuentra
+     */
+    public HeaderMapping detectarEncabezados(Sheet sheet, Map<String, List<String>> aliases, Set<String> requiredKeys, int maxScanRows) {
+        int lastRow = Math.min(sheet.getLastRowNum(), Math.max(0, maxScanRows));
+        for (int r = 0; r <= lastRow; r++) {
+            Row row = sheet.getRow(r);
+            if (row == null) continue;
+
+            Map<String, Integer> map = intentarConstruirMapaParaFila(row, aliases);
+            if (map == null) continue;
+
+            if (map.keySet().containsAll(requiredKeys)) {
+                return new HeaderMapping(r, map);
+            }
+        }
+
+        // Si no encontró una fila que cumpla todos los obligatorios, construir mensaje útil
+        String faltan = String.join(", ", requiredKeys);
+        throw new IllegalArgumentException("No se encontró fila de encabezados válida. " +
+                "Asegúrate de incluir: " + faltan + " (usa nombres o alias compatibles).");
+    }
+
+    /**
+     * Intenta construir el mapa para una fila específica.
+     * Devuelve null si la fila no contiene ninguna coincidencia significativa.
+     */
+    private Map<String, Integer> intentarConstruirMapaParaFila(Row headerRow, Map<String, List<String>> aliases) {
+        // Normaliza todas las celdas de la fila: colIndex -> texto normalizado
+        Map<Integer, String> normByCol = new HashMap<>();
+        short lastCell = headerRow.getLastCellNum();
+        if (lastCell < 0) return null;
+
+        for (int c = 0; c < lastCell; c++) {
+            Cell cell = headerRow.getCell(c);
+            String txt = (cell != null) ? cell.toString() : null;
+            String norm = normalizar(txt);
+            if (StringUtils.isNotBlank(norm)) {
+                normByCol.put(c, norm);
+            }
+        }
+        if (normByCol.isEmpty()) return null;
+
+        // Intenta matchear cada clave canónica con alguna columna por alias
+        Map<String, Integer> result = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> e : aliases.entrySet()) {
+            String key = e.getKey();
+            List<String> aliasList = e.getValue();
+            Integer colIndex = buscarColumnaPorAlias(normByCol, aliasList);
+            if (colIndex != null) {
+                result.put(key, colIndex);
+            }
+        }
+        return result.isEmpty() ? null : result;
+    }
+
+    /** Busca en la fila (texto ya normalizado) el primer índice de columna que coincida con alguno de los alias */
+    private Integer buscarColumnaPorAlias(Map<Integer, String> normByCol, List<String> aliasList) {
+        // Pre-normaliza alias
+        List<String> normAliases = aliasList.stream().map(this::normalizar).toList();
+
+        for (Map.Entry<Integer, String> e : normByCol.entrySet()) {
+            String cellTxt = e.getValue();
+            for (String alias : normAliases) {
+                if (cellTxt.equals(alias)) {
+                    return e.getKey();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Normaliza texto: trim, mayúsculas, sin acentos, colapsa espacios.
+     * Retorna null si queda vacío.
+     */
+    public String normalizar(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+        // quita acentos
+        t = Normalizer.normalize(t, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        // mayúsculas
+        t = t.toUpperCase(Locale.ROOT);
+        // colapsa espacios
+        t = t.replaceAll("\\s+", " ");
+        return t.isEmpty() ? null : t;
+    }
 
     // ===== Lectura segura de celdas =====
     public String leerString(Cell cell){
