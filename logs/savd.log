@@ -1,0 +1,35 @@
+2025-10-27 02:00:56.595 INFO  com.colors.savd.SavdApplication - Starting SavdApplication using Java 21.0.7 with PID 8996 (C:\Users\Mi PC\Documents\savd\target\classes started by Mi PC in C:\Users\Mi PC\Documents\savd)
+2025-10-27 02:00:56.595 DEBUG com.colors.savd.SavdApplication - Running with Spring Boot v3.5.7, Spring v6.2.12
+2025-10-27 02:00:56.596 INFO  com.colors.savd.SavdApplication - No active profile set, falling back to 1 default profile: "default"
+2025-10-27 02:00:56.942 INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2025-10-27 02:00:56.999 INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 55 ms. Found 11 JPA repository interfaces.
+2025-10-27 02:00:57.151 INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2025-10-27 02:00:57.152 INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2025-10-27 02:00:57.154 INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2025-10-27 02:00:57.154 INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.48]
+2025-10-27 02:00:57.181 INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2025-10-27 02:00:57.182 INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 584 ms
+2025-10-27 02:00:57.235 INFO  o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2025-10-27 02:00:57.239 INFO  o.h.c.i.RegionFactoryInitiator - HHH000026: Second-level cache disabled
+2025-10-27 02:00:57.249 INFO  o.s.o.j.p.SpringPersistenceUnitInfo - No LoadTimeWeaver setup: ignoring JPA class transformer
+2025-10-27 02:00:57.251 INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-2 - Starting...
+2025-10-27 02:00:57.274 INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-2 - Added connection com.mysql.cj.jdbc.ConnectionImpl@415fdef0
+2025-10-27 02:00:57.275 INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-2 - Start completed.
+2025-10-27 02:00:57.278 INFO  o.hibernate.orm.connections.pooling - HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-2)']
+	Database driver: undefined/unknown
+	Database version: 8.0.42
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2025-10-27 02:00:57.613 INFO  o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2025-10-27 02:00:57.657 INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2025-10-27 02:00:58.038 INFO  o.s.b.d.a.OptionalLiveReloadServer - LiveReload server is running on port 35729
+2025-10-27 02:00:58.046 INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2025-10-27 02:00:58.051 INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2025-10-27 02:00:58.056 INFO  com.colors.savd.SavdApplication - Started SavdApplication in 1.52 seconds (process running for 48.213)
+2025-10-27 02:00:58.059 INFO  o.s.b.d.a.ConditionEvaluationDeltaLoggingListener - Condition evaluation unchanged
+2025-10-27 02:05:31.023 INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-10-27 02:05:31.031 INFO  o.s.web.servlet.DispatcherServlet - Initializing Servlet 'dispatcherServlet'
+2025-10-27 02:05:31.059 INFO  o.s.web.servlet.DispatcherServlet - Completed initialization in 25 ms
