@@ -32,7 +32,7 @@ public interface VentaRepository extends JpaRepository<Venta, Long>{
             AND (:canalId IS NULL OR v.canal.id = :canalId) 
             AND v.estado = com.colors.savd.model.enums.EstadoVenta.ACTIVA 
         GROUP BY vd.sku.id 
-        ORDER BY unidades DESC
+        ORDER BY SUM(vd.cantidad) DESC, SUM(vd.importe) DESC
         """)
     List<TopProductoAgg> top15ByRango(@Param("desde") LocalDateTime desde,
                                 @Param("hasta") LocalDateTime hasta,

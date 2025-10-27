@@ -17,7 +17,10 @@ public interface VarianteSkuRepository extends JpaRepository<VarianteSku, Long>{
     Optional<VarianteSku> findByProducto_IdAndTalla_IdAndColor_Id(Long productoId, Long tallaId, Long colorId);
 
     List<VarianteSku> findByIdIn(Collection<Long> ids);
+
+    List<VarianteSku> findBySkuIn(Collection<String> skus); // para “batch resolve” por SKU de Excel
     
-    // Útil para catálogos activos en UI
-    List<VarianteSku> findByActivoTrue();
+    List<VarianteSku> findByProducto_Id(Long productoId);   // si filtras por producto en UI
+    
+    List<VarianteSku> findByActivoTrue(); // Útil para catálogos activos en UI
 }

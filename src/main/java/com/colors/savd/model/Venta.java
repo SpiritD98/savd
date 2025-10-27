@@ -39,15 +39,32 @@ public class Venta {
   // auditoría
   @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="created_by", foreignKey=@ForeignKey(name="fk_venta__created_by"))
   private Usuario createdBy;
+
   @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="updated_by", foreignKey=@ForeignKey(name="fk_venta__updated_by"))
   private Usuario updatedBy;
+
   @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="anulada_por", foreignKey=@ForeignKey(name="fk_venta__anulada_por"))
   private Usuario anuladaPor;
   
   @Column(name="anulada_at")
   private LocalDateTime anuladaAt;
+
   @Column(name="created_at", nullable=false)
   private LocalDateTime createdAt;
+
   @Column(name="updated_at", nullable=false)
   private LocalDateTime updatedAt;
+
+  @PrePersist
+  void prePersist(){
+    LocalDateTime now = LocalDateTime.now();
+    if(createdAt == null) createdAt = now;
+    if (updatedAt == null) updatedAt = now;
+    if (fechaHora == null) fechaHora = now;
+  }
+
+  @PreUpdate
+  void preUpdate(){
+    updatedAt = LocalDateTime.now();
+  }
 }
