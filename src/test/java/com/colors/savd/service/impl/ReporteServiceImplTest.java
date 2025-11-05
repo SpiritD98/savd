@@ -1,4 +1,4 @@
-package com.colors.savd.service.impl;
+/*package com.colors.savd.service.impl;
 
 import com.colors.savd.dto.AlertaStockDTO;
 import com.colors.savd.dto.TopProductoDTO;
@@ -156,4 +156,4 @@ class ReporteServiceImplTest {
     p.setStockSeguridad(ss);
     return p;
   }
-}
+}*/

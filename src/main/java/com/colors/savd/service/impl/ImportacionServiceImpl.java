@@ -8,6 +8,9 @@ import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +65,18 @@ public class ImportacionServiceImpl implements ImportacionService {
   @Override
   @Transactional
   public ImportResultadoDTO importarVentasExcel(InputStream in, String nombreArchivo, Long usuarioId, ImportOpcionesDTO opciones) {
+    if (opciones == null) opciones = ImportOpcionesDTO.builder().build();
+
+    // ==== Guard de seguridad: ANALISTA solo puede ejecutar en modo soloValidar ====
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    boolean isAdmim = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+    boolean isAnalista = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ANALISTA".equals(a.getAuthority()));
+    final boolean dryRun = opciones.isSoloValidar();
+
+    if (isAnalista && !dryRun) {
+      throw new AccessDeniedException("Analista solo puede pre-validar (soloValidar=true).");
+    }
+
     // ==== 1) Crear bitácora ====
     BitacoraCarga bit = new BitacoraCarga();
     bit.setFechaHora(LocalDateTime.now());
@@ -156,20 +171,30 @@ public class ImportacionServiceImpl implements ImportacionService {
           String msg = "Fila " + (i + 1) + ": " + e.getMessage();
           erroresMuestra.add(msg);
 
-          BitacoraError be = new BitacoraError();
-          be.setBitacora(bit);
-          be.setFilaOrigen(i + 1);
-          be.setCampo("GENERAL");
-          be.setMensajeError(e.getMessage());
-          be.setFechaHoraRegistro(LocalDateTime.now());
-          //be.setValorOriginal();
-          bitErrorRepo.save(be);
+          // Solo persistimos errores si NO es dry-run
+          if (!dryRun && bit != null) {
+            BitacoraError be = new BitacoraError();
+            be.setBitacora(bit);
+            be.setFilaOrigen(i + 1);
+            be.setCampo("GENERAL");
+            be.setMensajeError(e.getMessage());
+            be.setFechaHoraRegistro(LocalDateTime.now());
+            bitErrorRepo.save(be);
+          }          
 
           log.error("Error importando fila {}: {}", i + 1, e.getMessage(), e);
         }
       }
     } catch (Exception e) {
       throw new RuntimeException("Error leyendo Excel: " + e.getMessage(), e);
+    }
+
+    if (dryRun) {
+      return ImportResultadoDTO.builder().bitacoraId(null)
+      .filasOk(ok)
+      .filasError(err)
+      .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
+      .build();
     }
 
     // ==== 3) Persistir grupos como ventas con detalles + kardex ====
@@ -246,7 +271,6 @@ public class ImportacionServiceImpl implements ImportacionService {
         k.setUsuario(userRef);
         k.setCreatedAt(LocalDateTime.now());
         k.setObservacion(observacionBase);
-        // idempotency: hash reproducible por (ventaId, detId, "VENTA")
         k.setIdempotencyKey(generarIdemKey(v.getId(), det.getId(), "VENTA"));
         kardexRepo.save(k);
       }
@@ -256,13 +280,16 @@ public class ImportacionServiceImpl implements ImportacionService {
       ventaRepo.save(v);
     }
 
-    // ==== 4) Cerrar bitácora ====
-    bit.setFilasOk(ok);
-    bit.setFilasError(err);
-    bitacoraRepo.save(bit);
-
+    // ==== 4) Cerrar bitácora (solo si !dryRun)====
+    if (bit != null) {
+      bit.setFilasOk(ok);
+      bit.setFilasError(err);
+      // (opcional) bit.setRutaLog("logs/import/import.<fecha>.log.gz");
+      bitacoraRepo.save(bit);
+    }
+    
     return ImportResultadoDTO.builder()
-        .bitacoraId(bit.getId())
+        .bitacoraId(bit != null ? bit.getId() : null)
         .filasOk(ok)
         .filasError(err)
         .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)

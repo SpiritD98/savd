@@ -2,6 +2,8 @@ package com.colors.savd.repository;
 
 import java.util.List;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +28,8 @@ public interface BitacoraErrorRepository extends JpaRepository<BitacoraError, Lo
           ORDER BY COUNT(b.id) DESC
          """)
   List<Object[]> contarErroresPorCampo(@Param("bitacoraId") Long bitacoraId);
+
+  Page<BitacoraError> findByBitacora_IdOrderByFilaOrigenAsc(Long bitacoraId, Pageable pageable);
+
+  List<BitacoraError> findTop50ByBitacora_IdOrderByFilaOrigenAsc(Long bitacoraId);
 }

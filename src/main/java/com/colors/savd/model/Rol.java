@@ -20,7 +20,6 @@ public class Rol {
     @Column(nullable = false, length = 100)
     private String nombre;
 
-
     @Enumerated(EnumType.STRING)
     @Column(name = "estatus_registro", nullable = false, length = 12)
     private EstatusRegistro estatusRegistro = EstatusRegistro.VISIBLE;
@@ -29,5 +28,5 @@ public class Rol {
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
-    private LocalDateTime upDateTime;
+    private LocalDateTime updateAt;
 }
