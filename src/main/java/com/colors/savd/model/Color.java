@@ -37,4 +37,16 @@ public class Color {
   // Relación 1-N con alias (opcional de mapear al inicio)
   @OneToMany(mappedBy = "color", fetch = FetchType.LAZY)
   private List<ColorAlias> aliases;
+
+  @PrePersist
+  void prePersist() {
+    LocalDateTime now = LocalDateTime.now();
+    if (createdAt == null) createdAt = now;
+    if (updatedAt == null) updatedAt = now;
+  }
+
+  @PreUpdate
+  void preUpdate() {
+    updatedAt = LocalDateTime.now();
+  }
 }

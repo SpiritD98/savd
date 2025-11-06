@@ -36,4 +36,16 @@ public class Categoria {
 
   @OneToMany(mappedBy = "categoria", fetch = FetchType.LAZY)
   private List<Producto> productos;
+
+  @PrePersist
+  void prePersist() {
+    LocalDateTime now = LocalDateTime.now();
+    if (createdAt == null) createdAt = now;
+    if (updatedAt == null) updatedAt = now;
+  }
+
+  @PreUpdate
+  void preUpdate() {
+    updatedAt = LocalDateTime.now();
+  }
 }
