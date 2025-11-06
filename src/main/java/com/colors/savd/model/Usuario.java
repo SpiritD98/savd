@@ -36,6 +36,24 @@ public class Usuario {
     @Column(name = "estatus_registro", nullable = false, length = 12)
     private EstatusRegistro estatusRegistro = EstatusRegistro.VISIBLE;
 
+    @Column(name = "reset_token", length = 180)
+    private String resetToken;
+
+    @Column(name = "reset_token_expira")
+    private LocalDateTime resetTokenExpira;
+
+    @Column(name = "failed_logins", nullable = false)
+    private int failedLogins = 0;
+
+    @Column(name = "locked_until")
+    private LocalDateTime lockedUntil;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "password_updated_at")
+    private LocalDateTime passwordUpdatedAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
