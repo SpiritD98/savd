@@ -19,7 +19,7 @@ public class ParametroReposicion {
 
   // Relación 1–a–1 con VarianteSku (obligatoria)
   @OneToOne(fetch = FetchType.LAZY, optional = false)
-  @JoinColumn(name = "sku_id", foreignKey = @ForeignKey(name = "fk_parametro_repo__sku"))
+  @JoinColumn(name = "sku_id", unique = true, foreignKey = @ForeignKey(name = "fk_parametro_repo__sku"))
   private VarianteSku sku;
 
   @Column(name = "min_stock", nullable = false)
@@ -43,5 +43,18 @@ public class ParametroReposicion {
 
   @Column(name = "updated_at", nullable = false)
   private LocalDateTime updatedAt;
+
+  @PrePersist
+  void prePersist() {
+    var now = LocalDateTime.now();
+    if (createdAt == null) createdAt = now;
+    if (updatedAt == null) updatedAt = now;
+    if (ultimaActualizacion == null) ultimaActualizacion = now;
+  }
+  @PreUpdate
+  void preUpdate() {
+    updatedAt = LocalDateTime.now();
+    ultimaActualizacion = LocalDateTime.now();
+  }
 }
 
