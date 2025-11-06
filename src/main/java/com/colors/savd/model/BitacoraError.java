@@ -32,5 +32,10 @@ public class BitacoraError {
 
   @Column(name = "fecha_hora_registro", nullable = false)
   private LocalDateTime fechaHoraRegistro;
+
+  @PrePersist
+  void prePersist() {
+    if (fechaHoraRegistro == null) fechaHoraRegistro = LocalDateTime.now();
+  }
 }
 

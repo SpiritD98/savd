@@ -37,5 +37,10 @@ public class BitacoraCarga {
 
   @Column(name = "ruta_log", length = 255)
   private String rutaLog;
+
+  @PrePersist
+  void prePersist() {
+    if (fechaHora == null) fechaHora = LocalDateTime.now();
+  }
 }
 
