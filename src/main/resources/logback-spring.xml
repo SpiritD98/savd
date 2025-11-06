@@ -28,10 +28,11 @@
   <logger name="org.hibernate.SQL" level="WARN"/>
   <logger name="org.springframework" level="INFO"/>
   <logger name="com.colors.savd" level="DEBUG"/>
+  <logger name="org.springframework.security" level="DEBUG"/>
 
   <!-- Root -->
   <root level="${LOG_LEVEL_ROOT}">
     <appender-ref ref="CONSOLE"/>
-    <!-- <appender-ref ref="FILE"/> -->
+    <appender-ref ref="FILE"/>
   </root>
 </configuration>

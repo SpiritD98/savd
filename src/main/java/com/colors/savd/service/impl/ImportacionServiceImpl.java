@@ -65,39 +65,44 @@ public class ImportacionServiceImpl implements ImportacionService {
   @Override
   @Transactional
   public ImportResultadoDTO importarVentasExcel(InputStream in, String nombreArchivo, Long usuarioId, ImportOpcionesDTO opciones) {
-    if (opciones == null) opciones = ImportOpcionesDTO.builder().build();
+    // === GUARD DE ROL + SOLO VALIDAR ===
+    final boolean isDryRun = (opciones != null && opciones.isSoloValidar());
 
     // ==== Guard de seguridad: ANALISTA solo puede ejecutar en modo soloValidar ====
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
     boolean isAdmim = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     boolean isAnalista = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ANALISTA".equals(a.getAuthority()));
-    final boolean dryRun = opciones.isSoloValidar();
 
-    if (isAnalista && !dryRun) {
+    //Analista no puede persistir (solo pre-validacion)
+    if (isAnalista && !isDryRun) {
       throw new AccessDeniedException("Analista solo puede pre-validar (soloValidar=true).");
     }
 
-    // ==== 1) Crear bitácora ====
-    BitacoraCarga bit = new BitacoraCarga();
-    bit.setFechaHora(LocalDateTime.now());
-    bit.setUsuario(usuarioRepo.getReferenceById(usuarioId));
-    bit.setTipoCarga(TipoCarga.VENTAS);
-    bit.setArchivoNombre(nombreArchivo);
-    bit.setFilasOk(0);
-    bit.setFilasError(0);
-    bit = bitacoraRepo.save(bit);
-
     int ok = 0, err = 0;
     List<String> erroresMuestra = new ArrayList<>();
-
-    // ==== caches para evitar consultas repetidas ====
+    
+    //Cache para evitar consultas repetidas
     Map<String, CanalVenta> canalCache = new HashMap<>();
     Map<String, VarianteSku> skuCache = new HashMap<>();
 
-    // ==== 2) Parsear Excel a estructuras de agrupación ====
     // Cabecera: (fechaHora, canal, referencia) → lista de items
+    // Estructura de agrupación para la rama persistente
     Map<CabKey, List<ParsedItem>> grupos = new LinkedHashMap<>();
 
+    // ==== 1) Crear bitácora si no es dry-run ====
+    BitacoraCarga bit = null;
+    if (!isDryRun) {
+      bit = new BitacoraCarga();
+      bit.setFechaHora(LocalDateTime.now());
+      bit.setUsuario(usuarioRepo.getReferenceById(usuarioId));
+      bit.setTipoCarga(TipoCarga.VENTAS);
+      bit.setArchivoNombre(nombreArchivo);
+      bit.setFilasOk(0);
+      bit.setFilasError(0);
+      bit = bitacoraRepo.save(bit);
+    }
+
+    // ==== 2) Parsear Excel a estructuras de agrupación ====
     try (Workbook wb = WorkbookFactory.create(in)) {
       Sheet sheet = wb.getSheetAt(0);
 
@@ -117,15 +122,12 @@ public class ImportacionServiceImpl implements ImportacionService {
           // --- Leer por nombre de columnas ---
           LocalDateTime fechaHora = excelUtil.leerFechaHora(getCell(row, hm.col("FechaHora")));
           String canalCodigo = excelUtil.leerString(getCell(row, hm.col("CanalCodigo")));
-
           //"Referencia" puede no estar en el encabezado si no es obligatorio
           Integer colRef = hm.col("Referencia");
           String referencia = (colRef != null) ? excelUtil.leerString(getCell(row, colRef)) : null;
-
           String skuStr           = excelUtil.leerString(getCell(row, hm.col("SKU")));
           Integer cantidad        = excelUtil.leerEntero(getCell(row, hm.col("Cantidad")));
           BigDecimal precioUnit   = excelUtil.leerDecimal(getCell(row, hm.col("PrecioUnitario")));
-
           Integer colPL = hm.col("PrecioLista");
           BigDecimal precioLista  = (colPL != null) ? excelUtil.leerDecimal(getCell(row, colPL)) : null;
 
@@ -161,18 +163,20 @@ public class ImportacionServiceImpl implements ImportacionService {
           item.precioUnit = precioUnit;
           item.precioLista = (precioLista != null ? precioLista : sku.getPrecioLista());
 
-          // Agrupar por cabecera
-          CabKey key = new CabKey(fechaHora, canal.getId(), referencia);
-          grupos.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
-
+          // Si es persistente, acumula; si es dry-run, no se necesita agrupar
+          if (!isDryRun) {
+            CabKey key = new CabKey(fechaHora, canal.getId(), referencia);
+            grupos.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
+          }
+          
           ok++; // fila válida
         } catch (Exception e) {
           err++;
           String msg = "Fila " + (i + 1) + ": " + e.getMessage();
           erroresMuestra.add(msg);
 
-          // Solo persistimos errores si NO es dry-run
-          if (!dryRun && bit != null) {
+          // Solo en modo persistente registramos bitacora_error
+          if (!isDryRun && bit != null) {
             BitacoraError be = new BitacoraError();
             be.setBitacora(bit);
             be.setFilaOrigen(i + 1);
@@ -180,7 +184,7 @@ public class ImportacionServiceImpl implements ImportacionService {
             be.setMensajeError(e.getMessage());
             be.setFechaHoraRegistro(LocalDateTime.now());
             bitErrorRepo.save(be);
-          }          
+          }
 
           log.error("Error importando fila {}: {}", i + 1, e.getMessage(), e);
         }
@@ -189,111 +193,109 @@ public class ImportacionServiceImpl implements ImportacionService {
       throw new RuntimeException("Error leyendo Excel: " + e.getMessage(), e);
     }
 
-    if (dryRun) {
-      return ImportResultadoDTO.builder().bitacoraId(null)
-      .filasOk(ok)
-      .filasError(err)
-      .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
-      .build();
-    }
-
     // ==== 3) Persistir grupos como ventas con detalles + kardex ====
-    // TipoMovimiento VENTA (debe existir en catálogo)
-    TipoMovimiento tipoVenta = tipoMovRepo.findByCodigo("VENTA")
-        .orElseThrow(() -> new BusinessException("TipoMovimiento 'VENTA' no configurado"));
-    Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+    // === Rama persistente: crear ventas/detalles/kardex + cerrar bitácora ===
+    if (!isDryRun) {
+      // TipoMovimiento VENTA (debe existir en catálogo)
+      TipoMovimiento tipoVenta = tipoMovRepo.findByCodigo("VENTA")
+          .orElseThrow(() -> new BusinessException("TipoMovimiento 'VENTA' no configurado"));
+      Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+      // Observacion que pondremos en kardex 
+      final String observacionBase = construirObservacionBase(nombreArchivo, opciones);
 
-    // Observacion que pondremos en kardex 
-    final String observacionBase = construirObservacionBase(nombreArchivo, opciones);
+      for (Map.Entry<CabKey, List<ParsedItem>> entry : grupos.entrySet()) {
+        CabKey cab = entry.getKey();
+        List<ParsedItem> items = entry.getValue();
 
-    for (Map.Entry<CabKey, List<ParsedItem>> entry : grupos.entrySet()) {
-      CabKey cab = entry.getKey();
-      List<ParsedItem> items = entry.getValue();
+        // Canal por id (desde cache no tenemos instancia; recupéralo una vez)
+        CanalVenta canal = canalRepo.findById(cab.canalId())
+            .orElseThrow(() -> new BusinessException("Canal no encontrado id=" + cab.canalId()));
 
-      // Canal por id (desde cache no tenemos instancia; recupéralo una vez)
-      CanalVenta canal = canalRepo.findById(cab.canalId())
-          .orElseThrow(() -> new BusinessException("Canal no encontrado id=" + cab.canalId()));
+        // Evitar duplicados de cabecera (fecha+canal+ref)
+        String ref = cab.referencia();
+        boolean dup = (ref != null && ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(cab.fechaHora(), cab.canalId(), ref));
+        if (dup) {
+          log.warn("Cabecera duplicada: fecha={}, canalId={}, ref={}", cab.fechaHora(), cab.canalId(), ref);
+          continue; // saltar venta completa
+        }
 
-      // Evitar duplicados de cabecera (fecha+canal+ref)
-      String ref = cab.referencia();
-      boolean dup = (ref != null && ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(cab.fechaHora(), cab.canalId(), ref));
-      if (dup) {
-        log.warn("Cabecera duplicada: fecha={}, canalId={}, ref={}", cab.fechaHora(), cab.canalId(), ref);
-        continue; // saltar venta completa
+        // ===== Asignacion de temporada segun opciones =====
+        Temporada temporadaAsignada = resolvTemporadaPara(cab.fechaHora(), opciones);
+
+        // Crear cabecera
+        Venta v = new Venta();
+        v.setFechaHora(cab.fechaHora());
+        v.setCanal(canal);
+        v.setReferenciaOrigen(ref);
+        v.setTemporada(temporadaAsignada);
+        v.setEstado(EstadoVenta.ACTIVA);
+        v.setTotal(BigDecimal.ZERO);
+        v.setCreatedAt(LocalDateTime.now());
+        v.setUpdatedAt(LocalDateTime.now());
+        v.setCreatedBy(userRef);
+        v = ventaRepo.save(v);
+
+        BigDecimal total = BigDecimal.ZERO;
+
+        for (ParsedItem it : items) {
+          VarianteSku sku = skuRepo.findById(it.skuId)
+              .orElseThrow(() -> new BusinessException("SKU desapareció durante import: id=" + it.skuId));
+
+          // Detalle
+          VentaDetalle det = new VentaDetalle();
+          det.setVenta(v);
+          det.setSku(sku);
+          det.setCantidad(it.cantidad);
+          det.setPrecioUnitario(it.precioUnit);
+          det.setPrecioLista(it.precioLista != null ? it.precioLista : sku.getPrecioLista());
+          det.setImporte(it.precioUnit.multiply(BigDecimal.valueOf(it.cantidad)));
+          ventaDetRepo.save(det);
+
+          total = total.add(det.getImporte());
+
+          // Kardex (VENTA: -1)
+          KardexMovimiento k = new KardexMovimiento();
+          k.setFechaHora(v.getFechaHora());
+          k.setTipo(tipoVenta);
+          k.setSku(sku);
+          k.setCantidad(it.cantidad);
+          k.setSigno(-1);
+          k.setCanal(canal);
+          k.setVenta(v);
+          k.setVentaDetalle(det);
+          k.setReferencia(v.getReferenciaOrigen());
+          k.setUsuario(userRef);
+          k.setCreatedAt(LocalDateTime.now());
+          k.setObservacion(observacionBase);
+          k.setIdempotencyKey(generarIdemKey(v.getId(), det.getId(), "VENTA"));
+          kardexRepo.save(k);
+        }
+
+        v.setTotal(total);
+        v.setUpdatedAt(LocalDateTime.now());
+        ventaRepo.save(v);
       }
 
-      // ===== Asignacion de temporada segun opciones =====
-      Temporada temporadaAsignada = resolvTemporadaPara(cab.fechaHora(), opciones);
-
-      // Crear cabecera
-      Venta v = new Venta();
-      v.setFechaHora(cab.fechaHora());
-      v.setCanal(canal);
-      v.setReferenciaOrigen(ref);
-      v.setTemporada(temporadaAsignada);
-      v.setEstado(EstadoVenta.ACTIVA);
-      v.setTotal(BigDecimal.ZERO);
-      v.setCreatedAt(LocalDateTime.now());
-      v.setUpdatedAt(LocalDateTime.now());
-      v.setCreatedBy(userRef);
-
-      v = ventaRepo.save(v);
-
-      BigDecimal total = BigDecimal.ZERO;
-
-      for (ParsedItem it : items) {
-        VarianteSku sku = skuRepo.findById(it.skuId)
-            .orElseThrow(() -> new BusinessException("SKU desapareció durante import: id=" + it.skuId));
-
-        // Detalle
-        VentaDetalle det = new VentaDetalle();
-        det.setVenta(v);
-        det.setSku(sku);
-        det.setCantidad(it.cantidad);
-        det.setPrecioUnitario(it.precioUnit);
-        det.setPrecioLista(it.precioLista != null ? it.precioLista : sku.getPrecioLista());
-        det.setImporte(it.precioUnit.multiply(BigDecimal.valueOf(it.cantidad)));
-        ventaDetRepo.save(det);
-
-        total = total.add(det.getImporte());
-
-        // Kardex (VENTA: -1)
-        KardexMovimiento k = new KardexMovimiento();
-        k.setFechaHora(v.getFechaHora());
-        k.setTipo(tipoVenta);
-        k.setSku(sku);
-        k.setCantidad(it.cantidad);
-        k.setSigno(-1);
-        k.setCanal(canal);
-        k.setVenta(v);
-        k.setVentaDetalle(det);
-        k.setReferencia(v.getReferenciaOrigen());
-        k.setUsuario(userRef);
-        k.setCreatedAt(LocalDateTime.now());
-        k.setObservacion(observacionBase);
-        k.setIdempotencyKey(generarIdemKey(v.getId(), det.getId(), "VENTA"));
-        kardexRepo.save(k);
-      }
-
-      v.setTotal(total);
-      v.setUpdatedAt(LocalDateTime.now());
-      ventaRepo.save(v);
-    }
-
-    // ==== 4) Cerrar bitácora (solo si !dryRun)====
-    if (bit != null) {
+      // ==== 4) Cerrar bitácora con los conteos reales ====
       bit.setFilasOk(ok);
       bit.setFilasError(err);
-      // (opcional) bit.setRutaLog("logs/import/import.<fecha>.log.gz");
       bitacoraRepo.save(bit);
-    }
-    
-    return ImportResultadoDTO.builder()
-        .bitacoraId(bit != null ? bit.getId() : null)
+
+      return ImportResultadoDTO.builder()
+        .bitacoraId(bit.getId())
         .filasOk(ok)
         .filasError(err)
         .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
         .build();
+    }
+
+    // ==== Rama dry-run: NO se persiste nada, bitácoraId = null ===
+    return ImportResultadoDTO.builder()
+      .bitacoraId(null)
+      .filasOk(ok)
+      .filasError(err)
+      .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
+      .build();
   }
 
   // === Helpers ===
