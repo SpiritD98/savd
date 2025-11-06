@@ -17,7 +17,7 @@ public interface VentaDetalleRepository extends JpaRepository<VentaDetalle, Long
 
   /**
    * Totales por venta (unidades e importe), útil para recalcular/validar total de cabecera.
-   * Retorna [Long ventaId, Long unidades, Double importe]
+   * Retorna [Long ventaId, Long unidades, BigDecimal importe]
    */
   @Query("""
     SELECT vd.venta.id AS ventaId, 
