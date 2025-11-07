@@ -5,6 +5,7 @@ import com.colors.savd.service.ReporteService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.*;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -14,6 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/reportes")
 @RequiredArgsConstructor
+@Validated
 public class ReporteController {
 
   private final ReporteService reporteService;
@@ -28,6 +30,7 @@ public class ReporteController {
       @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
       @RequestParam(value = "canalId", required = false) Long canalId
   ) {
+    // Validación de rango se hace en ReporteServiceImpl (BusinessException si algo está mal)
     return reporteService.top15(desde, hasta, canalId);
   }
 

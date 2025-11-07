@@ -15,7 +15,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import com.colors.savd.dto.LineaVentaRespDTO;
 import com.colors.savd.dto.VentaManualDTO;
 import com.colors.savd.dto.VentaRespuestaDTO;
-import com.colors.savd.exception.BusinessException;
 import com.colors.savd.model.VarianteSku;
 import com.colors.savd.model.Venta;
 import com.colors.savd.model.VentaDetalle;
@@ -24,6 +23,7 @@ import com.colors.savd.repository.VentaDetalleRepository;
 import com.colors.savd.repository.VentaRepository;
 import com.colors.savd.service.VentaService;
 
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,7 +46,6 @@ public class VentaController {
      * Respuesta: 201 Created + VentaRespuestaDTO
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Transactional
     public ResponseEntity<VentaRespuestaDTO> crearVentaManual(
             @Valid @RequestBody VentaManualDTO dto,
             @RequestParam("usuarioId") Long usuarioId,
@@ -74,7 +73,6 @@ public class VentaController {
      * Respuesta: 200 OK + VentaRespuestaDTO (ya anulada)
      */
     @PostMapping(path = "/{ventaId}/anular", produces = MediaType.APPLICATION_JSON_VALUE)
-    @Transactional
     public ResponseEntity<VentaRespuestaDTO> anularVenta(
             @PathVariable("ventaId") Long ventaId,
             @RequestParam("usuarioId") Long usuarioId,
@@ -105,7 +103,7 @@ public class VentaController {
      */
     private VentaRespuestaDTO buildVentaRespuesta(Long ventaId) {
         Venta v = ventaRepo.findById(ventaId)
-                .orElseThrow(() -> new BusinessException("Venta no encontrada id=" + ventaId));
+                .orElseThrow(() -> new EntityNotFoundException("Venta no encontrada id=" + ventaId));
 
         List<VentaDetalle> detalles = ventaDetRepo.findByVenta_Id(ventaId);
 
