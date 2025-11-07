@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +19,11 @@ import com.colors.savd.repository.*;
 import com.colors.savd.service.VentaService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor 
+@Slf4j
 public class VentaServiceImpl implements VentaService {
 
   private final VentaRepository ventaRepo;
@@ -50,8 +53,8 @@ public class VentaServiceImpl implements VentaService {
       throw new BusinessException("Referencia de venta es obligatoria para canal FÍSICO.");
     }
 
-    // 3) Fecha efectiva
-    LocalDateTime fechaEf = (dto.getFechaHora() != null) ? dto.getFechaHora() : LocalDateTime.now();
+    // 3) Fecha efectiva (normalizada a segundos para consistencia / duplicidad)
+    LocalDateTime fechaEf = (dto.getFechaHora() != null) ? dto.getFechaHora() : LocalDateTime.now().withNano(0);
 
     // 4) Chequeo de duplicidad por cabecera (si hay referencia)
     if (referencia != null && Boolean.TRUE.equals(ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(fechaEf, canal.getId(), referencia))) {
@@ -72,7 +75,8 @@ public class VentaServiceImpl implements VentaService {
     .orElseThrow(() -> new BusinessException("Tipomovimiento 'VENTA' no configurado"));
 
     // 7) Usuario responsable
-    Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+    Usuario userRef = usuarioRepo.findById(usuarioId)
+    .orElseThrow(() -> new BusinessException("Usuario no encontrado id= " + usuarioId));
     
     // 8) Crear Cabecera de Venta
     Venta v = new Venta();
@@ -92,52 +96,58 @@ public class VentaServiceImpl implements VentaService {
     BigDecimal total = BigDecimal.ZERO;
 
     for (LineaVentaDTO it : dto.getItems()) {
-    VarianteSku sku = skuRepo.findById(it.getSkuId())
-        .orElseThrow(() -> new BusinessException("SKU no encontrado: " + it.getSkuId()));
+      VarianteSku sku = skuRepo.findById(it.getSkuId())
+          .orElseThrow(() -> new BusinessException("SKU no encontrado: " + it.getSkuId()));
 
-    if (it.getCantidad() == null || it.getCantidad() <= 0) {
-      throw new BusinessException("Cantidad inválida para SKU " + sku.getSku());
+      if (it.getCantidad() == null || it.getCantidad() <= 0) {
+        throw new BusinessException("Cantidad inválida para SKU " + sku.getSku());
+      }
+      if (it.getPrecioUnitario() == null || it.getPrecioUnitario().signum() < 0) {
+        throw new BusinessException("Precio unitario inválido para SKU " + sku.getSku());
+      }
+
+      // Precio lista por línea (si vino), si no, el del SKU
+      BigDecimal precioLista = (it.getPrecioLista() != null) ? it.getPrecioLista() : sku.getPrecioLista();
+
+      // Detalle
+      VentaDetalle det = new VentaDetalle();
+      det.setVenta(v);
+      det.setSku(sku);
+      det.setCantidad(it.getCantidad());
+      det.setPrecioUnitario(it.getPrecioUnitario());
+      det.setPrecioLista(precioLista);
+
+      BigDecimal importe = it.getPrecioUnitario()
+          .multiply(BigDecimal.valueOf(it.getCantidad()))
+          .setScale(2, RoundingMode.HALF_UP);
+      det.setImporte(importe);
+      ventaDetRepo.save(det);
+
+      total = total.add(importe);
+
+      // Kardex (VENTA: signo -1) con idempotencia
+      KardexMovimiento k = new KardexMovimiento();
+      k.setFechaHora(v.getFechaHora());
+      k.setTipo(tipoVenta);
+      k.setSku(sku);
+      k.setCantidad(it.getCantidad());
+      k.setSigno(-1);
+      k.setCanal(canal);
+      k.setVenta(v);
+      k.setVentaDetalle(det);
+      k.setReferencia(v.getReferenciaOrigen());
+      k.setObservacion("Venta manual");
+      k.setUsuario(userRef);
+      k.setCreatedAt(LocalDateTime.now());
+      k.setIdempotencyKey(String.format("VENTA|%d|%d", v.getId(), det.getId()));
+
+      try {
+        kardexRepo.save(k);
+      } catch (DataIntegrityViolationException ex) {
+        // Reintento / duplicado por clave de idempotencia: log y continuar
+        log.warn("Conflicto de idempotencia en Kardex para venta={} det={}", v.getId(), det.getId());
+      }
     }
-    if (it.getPrecioUnitario() == null || it.getPrecioUnitario().signum() < 0) {
-      throw new BusinessException("Precio unitario inválido para SKU " + sku.getSku());
-    }
-
-    // Precio lista por línea (si vino), si no, el del SKU
-    BigDecimal precioLista = (it.getPrecioLista() != null) ? it.getPrecioLista() : sku.getPrecioLista();
-
-    // Detalle
-    VentaDetalle det = new VentaDetalle();
-    det.setVenta(v);
-    det.setSku(sku);
-    det.setCantidad(it.getCantidad());
-    det.setPrecioUnitario(it.getPrecioUnitario());
-    det.setPrecioLista(precioLista);
-
-    BigDecimal importe = it.getPrecioUnitario()
-        .multiply(BigDecimal.valueOf(it.getCantidad()))
-        .setScale(2, RoundingMode.HALF_UP);
-    det.setImporte(importe);
-    ventaDetRepo.save(det);
-
-    total = total.add(importe);
-
-    // Kardex (VENTA: signo -1)
-    KardexMovimiento k = new KardexMovimiento();
-    k.setFechaHora(v.getFechaHora());
-    k.setTipo(tipoVenta);
-    k.setSku(sku);
-    k.setCantidad(it.getCantidad());
-    k.setSigno(-1);
-    k.setCanal(canal);
-    k.setVenta(v);
-    k.setVentaDetalle(det);
-    k.setReferencia(v.getReferenciaOrigen());
-    k.setObservacion("Venta manual");
-    k.setUsuario(userRef);
-    k.setCreatedAt(LocalDateTime.now());
-    k.setIdempotencyKey(String.format("VENTA|%d|%d", v.getId(), det.getId()));
-    kardexRepo.save(k);
-  }
 
     // 10) Finalizar cabecera
     v.setTotal(total.setScale(2, RoundingMode.HALF_UP));
@@ -150,7 +160,7 @@ public class VentaServiceImpl implements VentaService {
   @Override
   @Transactional
   public void anularVenta(Long ventaId, Long usuarioId, String motivo) {
-    var v = ventaRepo.findById(ventaId)
+    Venta v = ventaRepo.findById(ventaId)
         .orElseThrow(() -> new BusinessException("Venta no existe"));
 
     if (v.getEstado() == EstadoVenta.ANULADA){ 
@@ -160,7 +170,10 @@ public class VentaServiceImpl implements VentaService {
     TipoMovimiento tipoAnul = tipoMovRepo.findByCodigo("ANULACION")
     .orElseThrow(() -> new BusinessException("TipoMovimiento 'ANULACION' no configurado"));
 
-    Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+    Usuario userRef = usuarioRepo.findById(usuarioId)
+    .orElseThrow(() -> new BusinessException("Usuario no encontrado id=" + usuarioId));
+
+    String motivoEf = StringUtils.defaultIfBlank(motivo, "Anulacion solicitada");
 
     // Regla: invertir kardex de la venta (crear movimientos ANULACION con signo +1)
     List<VentaDetalle> detalles = ventaDetRepo.findByVenta_Id(ventaId);
@@ -174,12 +187,17 @@ public class VentaServiceImpl implements VentaService {
       k.setCanal(v.getCanal());
       k.setVenta(v);
       k.setVentaDetalle(det);
-      k.setReferencia("ANUL-" + (StringUtils.defaultIfBlank(v.getReferenciaOrigen(), v.getId().toString())));
-      k.setObservacion(motivo);
+      k.setReferencia("ANUL-" + StringUtils.defaultIfBlank(v.getReferenciaOrigen(), v.getId().toString()));
+      k.setObservacion(motivoEf);
       k.setUsuario(userRef);
       k.setCreatedAt(LocalDateTime.now());
       k.setIdempotencyKey(String.format("ANUL|%d|%d", v.getId(), det.getId()));
-      kardexRepo.save(k);
+
+      try {
+        kardexRepo.save(k);
+      } catch (Exception e) {
+        log.warn("Conflicto de idempotencia en Kardex (anulación) para venta={} det={}", v.getId(), det.getId());
+      }
     }
 
     // Marcar Cabecera

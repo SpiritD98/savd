@@ -2,12 +2,14 @@ package com.colors.savd.service.impl;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -70,7 +72,6 @@ public class ImportacionServiceImpl implements ImportacionService {
 
     // ==== Guard de seguridad: ANALISTA solo puede ejecutar en modo soloValidar ====
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-    boolean isAdmim = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     boolean isAnalista = auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_ANALISTA".equals(a.getAuthority()));
 
     //Analista no puede persistir (solo pre-validacion)
@@ -94,7 +95,7 @@ public class ImportacionServiceImpl implements ImportacionService {
     if (!isDryRun) {
       bit = new BitacoraCarga();
       bit.setFechaHora(LocalDateTime.now());
-      bit.setUsuario(usuarioRepo.getReferenceById(usuarioId));
+      bit.setUsuario(usuarioRepo.findById(usuarioId).orElseThrow(() -> new BusinessException("Usuario no encontrado id=" + usuarioId)));
       bit.setTipoCarga(TipoCarga.VENTAS);
       bit.setArchivoNombre(nombreArchivo);
       bit.setFilasOk(0);
@@ -121,6 +122,10 @@ public class ImportacionServiceImpl implements ImportacionService {
         try {
           // --- Leer por nombre de columnas ---
           LocalDateTime fechaHora = excelUtil.leerFechaHora(getCell(row, hm.col("FechaHora")));
+          if (fechaHora != null) {
+            fechaHora = fechaHora.withNano(0); // normalizar a segundos
+          }
+
           String canalCodigo = excelUtil.leerString(getCell(row, hm.col("CanalCodigo")));
           //"Referencia" puede no estar en el encabezado si no es obligatorio
           Integer colRef = hm.col("Referencia");
@@ -163,7 +168,7 @@ public class ImportacionServiceImpl implements ImportacionService {
           item.precioUnit = precioUnit;
           item.precioLista = (precioLista != null ? precioLista : sku.getPrecioLista());
 
-          // Si es persistente, acumula; si es dry-run, no se necesita agrupar
+          // Si es persistente, acumula; si es dry-run, no se necesita agrupar, solo contamos ok/err
           if (!isDryRun) {
             CabKey key = new CabKey(fechaHora, canal.getId(), referencia);
             grupos.computeIfAbsent(key, k -> new ArrayList<>()).add(item);
@@ -199,7 +204,7 @@ public class ImportacionServiceImpl implements ImportacionService {
       // TipoMovimiento VENTA (debe existir en catálogo)
       TipoMovimiento tipoVenta = tipoMovRepo.findByCodigo("VENTA")
           .orElseThrow(() -> new BusinessException("TipoMovimiento 'VENTA' no configurado"));
-      Usuario userRef = usuarioRepo.getReferenceById(usuarioId);
+      Usuario userRef = usuarioRepo.findById(usuarioId).orElseThrow(() -> new BusinessException("Usuario no encontrado id=" + usuarioId));
       // Observacion que pondremos en kardex 
       final String observacionBase = construirObservacionBase(nombreArchivo, opciones);
 
@@ -208,23 +213,24 @@ public class ImportacionServiceImpl implements ImportacionService {
         List<ParsedItem> items = entry.getValue();
 
         // Canal por id (desde cache no tenemos instancia; recupéralo una vez)
-        CanalVenta canal = canalRepo.findById(cab.canalId())
-            .orElseThrow(() -> new BusinessException("Canal no encontrado id=" + cab.canalId()));
+        CanalVenta canal = canalRepo.findById(cab.canalId()).orElseThrow(() -> new BusinessException("Canal no encontrado id=" + cab.canalId()));
+
+        String ref = cab.referencia();
+        LocalDateTime fechaCab = cab.fechaHora();
 
         // Evitar duplicados de cabecera (fecha+canal+ref)
-        String ref = cab.referencia();
-        boolean dup = (ref != null && ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(cab.fechaHora(), cab.canalId(), ref));
+        boolean dup = (ref != null && ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(fechaCab, cab.canalId(), ref));
         if (dup) {
-          log.warn("Cabecera duplicada: fecha={}, canalId={}, ref={}", cab.fechaHora(), cab.canalId(), ref);
+          log.warn("Cabecera duplicada: fecha={}, canalId={}, ref={}", fechaCab, cab.canalId(), ref);
           continue; // saltar venta completa
         }
 
         // ===== Asignacion de temporada segun opciones =====
-        Temporada temporadaAsignada = resolvTemporadaPara(cab.fechaHora(), opciones);
+        Temporada temporadaAsignada = resolvTemporadaPara(fechaCab, opciones);
 
         // Crear cabecera
         Venta v = new Venta();
-        v.setFechaHora(cab.fechaHora());
+        v.setFechaHora(fechaCab);
         v.setCanal(canal);
         v.setReferenciaOrigen(ref);
         v.setTemporada(temporadaAsignada);
@@ -248,12 +254,14 @@ public class ImportacionServiceImpl implements ImportacionService {
           det.setCantidad(it.cantidad);
           det.setPrecioUnitario(it.precioUnit);
           det.setPrecioLista(it.precioLista != null ? it.precioLista : sku.getPrecioLista());
-          det.setImporte(it.precioUnit.multiply(BigDecimal.valueOf(it.cantidad)));
+
+          BigDecimal importe = it.precioUnit.multiply(BigDecimal.valueOf(it.cantidad)).setScale(2, RoundingMode.HALF_UP);
+          det.setImporte(importe);
           ventaDetRepo.save(det);
 
-          total = total.add(det.getImporte());
+          total = total.add(importe);
 
-          // Kardex (VENTA: -1)
+          // Kardex (VENTA: -1) con idempotencia
           KardexMovimiento k = new KardexMovimiento();
           k.setFechaHora(v.getFechaHora());
           k.setTipo(tipoVenta);
@@ -268,10 +276,14 @@ public class ImportacionServiceImpl implements ImportacionService {
           k.setCreatedAt(LocalDateTime.now());
           k.setObservacion(observacionBase);
           k.setIdempotencyKey(generarIdemKey(v.getId(), det.getId(), "VENTA"));
-          kardexRepo.save(k);
+          try {
+            kardexRepo.save(k);
+          } catch (DataIntegrityViolationException ex) {
+            log.warn("Conflicto de idempotencia en Kardex (import) venta={} det={}", v.getId(), det.getId());
+          }
         }
 
-        v.setTotal(total);
+        v.setTotal(total.setScale(2, RoundingMode.HALF_UP));
         v.setUpdatedAt(LocalDateTime.now());
         ventaRepo.save(v);
       }
