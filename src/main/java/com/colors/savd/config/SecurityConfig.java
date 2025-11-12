@@ -26,6 +26,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Público
                 .requestMatchers("/api/auth/**", "/api/health").permitAll()
+                .requestMatchers("/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 // Ventas
                 .requestMatchers(HttpMethod.POST, "/api/ventas/*/anular").hasRole("ADMIN")

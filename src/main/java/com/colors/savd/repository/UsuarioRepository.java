@@ -15,6 +15,7 @@ import com.colors.savd.model.enums.EstatusRegistro;
 public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     Optional<Usuario> findByEmail(String email);
+    Optional<Usuario> findByResetToken(String token);
 
     @Query("""
             select u from Usuario u

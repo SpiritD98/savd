@@ -1,5 +1,7 @@
 package com.colors.savd.config;
 
+import java.time.LocalDateTime;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -27,10 +29,16 @@ public class AuthBeans {
                 throw new UsernameNotFoundException("Usuario inactivo: "+ username);
             }
 
+            boolean locked = usuario.getLockedUntil() != null && usuario.getLockedUntil().isAfter(LocalDateTime.now());
             String roleCode = usuario.getRol().getCodigo();
             var authority = new SimpleGrantedAuthority("ROLE_" + roleCode);
 
-            return User.withUsername(usuario.getEmail()).password(usuario.getPasswordHash()).authorities(authority).accountLocked(false).disabled(false).build();
+            return User.withUsername(usuario.getEmail())
+                        .password(usuario.getPasswordHash())
+                        .authorities(authority)
+                        .accountLocked(locked)
+                        .disabled(false)
+                        .build();
         };
     }
 

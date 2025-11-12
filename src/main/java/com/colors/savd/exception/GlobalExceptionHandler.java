@@ -264,4 +264,18 @@ public class GlobalExceptionHandler {
             .build();
         return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(body);
     }
+
+    @ExceptionHandler(org.springframework.security.authentication.LockedException.class)
+    public ResponseEntity<ApiError> handleLocked(org.springframework.security.authentication.LockedException ex, HttpServletRequest req) {
+        ApiError body = ApiError.builder()
+            .timestamp(Instant.now())
+            .status(423)
+            .error("Locked")
+            .mensaje("La cuenta está temporalmente bloqueada por múltiples intentos fallidos.")
+            .path(req.getRequestURI())
+            .code("ACCOUNT_LOCKED")
+            .build();
+        return ResponseEntity.status(423).body(body);
+    }
+
 }
