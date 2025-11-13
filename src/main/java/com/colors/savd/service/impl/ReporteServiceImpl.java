@@ -1,8 +1,10 @@
 package com.colors.savd.service.impl;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,11 +15,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.colors.savd.dto.AlertaStockDTO;
+import com.colors.savd.dto.KpiCategoriaMesDTO;
 import com.colors.savd.dto.TopProductoDTO;
 import com.colors.savd.exception.BusinessException;
 import com.colors.savd.model.ParametroReposicion;
 import com.colors.savd.model.VarianteSku;
 import com.colors.savd.repository.KardexRepository;
+import com.colors.savd.repository.KpiRepository;
 import com.colors.savd.repository.ParametroReposicionRepository;
 import com.colors.savd.repository.VarianteSkuRepository;
 import com.colors.savd.repository.VentaRepository;
@@ -36,6 +40,8 @@ public class ReporteServiceImpl implements ReporteService{
     private final ParametroReposicionRepository paramRepo;
     private final VarianteSkuRepository varianteSkuRepo;
     private final ExcelUtil excelUtil;
+    private final KpiRepository kpiRepo;
+
 
     @Override
     @Transactional(readOnly = true)
@@ -176,5 +182,105 @@ public class ReporteServiceImpl implements ReporteService{
         if (desde.isAfter(hasta)) {
             throw new BusinessException("'desde' no puede ser mayor que 'hasta'.");
         }
+    }
+
+    @Override
+    public List<KpiCategoriaMesDTO> kpiCategoriaMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
+            Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+
+        // 1) Traer agregación cruda        
+        var rows = kpiRepo.kpiCategoriaMensual(desde,hasta,canalId,temporadaId,categoriaId,tallaId,colorId);
+        if (rows == null || rows.isEmpty()) return List.of();
+
+        // 2) Totales por (año, mes) para calcular aporte
+        record Ym(int y, int m) {}
+        Map<Ym, BigDecimal> totalIngresosMes = new HashMap<>();
+        Map<Ym, Long> totalUnidadesMes = new HashMap<>();
+
+        for (var r : rows) {
+            Ym ym = new Ym(nz(r.getAnio()), nz(r.getMes()));
+            totalIngresosMes.merge(ym, nzBD(r.getIngresos()), BigDecimal::add);
+            totalUnidadesMes.merge(ym, nzL(r.getUnidades()), Long::sum);
+        }
+
+        // 3) Indexar por (categoriaId, anio, mes) para variaciones
+        record Key(Long cat, int y, int m) {}
+        Map<Key, KpiCategoriaMesDTO> byKey = new HashMap<>();
+        List<KpiCategoriaMesDTO> out = new ArrayList<>(rows.size());
+
+        for (var r : rows) {
+            int anio = nz(r.getAnio());
+            int mes  = nz(r.getMes());
+            Ym ym = new Ym(anio, mes);
+
+            Long unidades  = nzL(r.getUnidades());
+            BigDecimal ingresos = nzBD(r.getIngresos());
+            BigDecimal totalMes = totalIngresosMes.getOrDefault(ym, BigDecimal.ZERO);
+
+            BigDecimal aporte = totalMes.signum() == 0 
+                    ? BigDecimal.ZERO 
+                    : ingresos.divide(totalMes, 6, RoundingMode.HALF_UP); // proporción 0..1
+
+            var dto = KpiCategoriaMesDTO.builder()
+                    .anio(anio)
+                    .mes(mes)
+                    .categoriaId(r.getCategoriaId())
+                    .categoria(r.getCategoria())
+                    .unidades(unidades)
+                    .ingresos(ingresos)
+                    .aporteMes(aporte)
+                    .build();
+
+            out.add(dto);
+            byKey.put(new Key(r.getCategoriaId(), anio, mes), dto);
+        }
+
+        // 4) Variaciones vs mes anterior y YoY
+        for (var dto : out) {
+            int anio = dto.getAnio();
+            int mes  = dto.getMes();
+            Long cat = dto.getCategoriaId();
+
+            // Mes anterior
+            int prevY = anio, prevM = mes - 1;
+            if (prevM == 0) { prevM = 12; prevY = anio - 1; }
+            var prev = byKey.get(new Key(cat, prevY, prevM));
+            if (prev != null) {
+                dto.setVarMesAnteriorUnidades( varPct(dto.getUnidades(), prev.getUnidades()) );
+                dto.setVarMesAnteriorIngresos( varPct(dto.getIngresos(), prev.getIngresos()) );
+            }
+
+            // YoY (mismo mes, año - 1)
+            var yoy = byKey.get(new Key(cat, anio - 1, mes));
+            if (yoy != null) {
+                dto.setVarYoYUnidades( varPct(dto.getUnidades(), yoy.getUnidades()) );
+                dto.setVarYoYIngresos( varPct(dto.getIngresos(), yoy.getIngresos()) );
+            }
+        }
+
+        // Orden opcional final: por año/mes y mayor aporte
+        out.sort(Comparator
+            .comparing(KpiCategoriaMesDTO::getAnio)
+            .thenComparing(KpiCategoriaMesDTO::getMes)
+            .thenComparing(KpiCategoriaMesDTO::getAporteMes, Comparator.nullsLast(Comparator.reverseOrder()))
+        );
+
+        return out;
+    }
+
+    private static int nz(Integer v) { return v == null ? 0 : v; }
+    private static long nzL(Long v) { return v == null ? 0L : v; }
+    private static BigDecimal nzBD(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
+
+    private static BigDecimal varPct(long actual, long previo) {
+        if (previo == 0L) return null; // sin base
+        return BigDecimal.valueOf(actual - previo)
+                .divide(BigDecimal.valueOf(previo), 6, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal varPct(BigDecimal actual, BigDecimal previo) {
+        if (previo == null || previo.signum() == 0) return null;
+        return actual.subtract(previo)
+                    .divide(previo, 6, RoundingMode.HALF_UP);
     }
 }

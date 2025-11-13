@@ -33,6 +33,13 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/ventas/**").hasAnyRole("ADMIN", "VENDEDOR")
                 // Importaciones
                 .requestMatchers(HttpMethod.POST, "/api/importaciones/ventas").hasAnyRole("ADMIN", "ANALISTA")
+                // inventario
+                .requestMatchers(HttpMethod.POST, "/api/inventario/**").hasAnyRole("ADMIN", "ANALISTA")
+                // parámetros reposición
+                .requestMatchers(HttpMethod.GET, "/api/parametros/**").hasAnyRole("ADMIN","ANALISTA","VENDEDOR")
+                .requestMatchers(HttpMethod.POST, "/api/parametros/**").hasAnyRole("ADMIN")
+                .requestMatchers(HttpMethod.PUT, "/api/parametros/**").hasAnyRole("ADMIN")
+                .requestMatchers(HttpMethod.DELETE,"/api/parametros/**").hasAnyRole("ADMIN")
                 // Bitácoras
                 .requestMatchers(HttpMethod.GET, "/api/bitacoras/*/log").hasRole("ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/bitacoras/**").hasAnyRole("ADMIN", "ANALISTA")
