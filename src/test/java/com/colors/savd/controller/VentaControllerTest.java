@@ -2,8 +2,6 @@ package com.colors.savd.controller;
 
 import com.colors.savd.dto.LineaVentaDTO;
 import com.colors.savd.dto.VentaManualDTO;
-import com.colors.savd.dto.VentaRespuestaDTO;
-import com.colors.savd.dto.LineaVentaRespDTO;
 import com.colors.savd.model.*;
 import com.colors.savd.model.enums.EstadoVenta;
 import com.colors.savd.repository.VentaDetalleRepository;
@@ -11,7 +9,6 @@ import com.colors.savd.repository.VentaRepository;
 import com.colors.savd.service.VentaService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;

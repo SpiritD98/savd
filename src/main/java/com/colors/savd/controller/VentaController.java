@@ -140,7 +140,6 @@ public class VentaController {
 
     private static String safe(String s) { return s == null ? "" : s; }
 
-    @SuppressWarnings("unused")
     private static String fmtFecha(java.time.LocalDateTime dt) {
         return dt == null ? "" : dt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
