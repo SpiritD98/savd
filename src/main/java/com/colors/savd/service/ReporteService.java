@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import com.colors.savd.dto.AlertaStockDTO;
+import com.colors.savd.dto.KpiCategoriaDTO;
 import com.colors.savd.dto.KpiCategoriaMesDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
 import com.colors.savd.dto.KpiSkuMesDTO;
@@ -16,4 +17,5 @@ public interface ReporteService {
     List<KpiCategoriaMesDTO> kpiCategoriaMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId);
     List<KpiProductoMesDTO> kpiProductoMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId);
     List<KpiSkuMesDTO> kpiSkuMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId);
+    List<KpiCategoriaDTO> kpiPorCategoria(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId);
 }

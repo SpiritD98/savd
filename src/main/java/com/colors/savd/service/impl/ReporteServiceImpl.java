@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.colors.savd.dto.AlertaStockDTO;
+import com.colors.savd.dto.KpiCategoriaDTO;
 import com.colors.savd.dto.KpiCategoriaMesDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
 import com.colors.savd.dto.KpiSkuMesDTO;
@@ -400,6 +401,62 @@ public class ReporteServiceImpl implements ReporteService{
         return out;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<KpiCategoriaDTO> kpiPorCategoria(LocalDateTime desde, LocalDateTime hasta,
+                                                Long canalId, Long temporadaId, Long categoriaId,
+                                                Long tallaId, Long colorId) {
+        // Actual
+        var actual = kpiRepo.kpiCategoriaTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        // Periodo anterior de igual duración
+        var dur = java.time.Duration.between(desde, hasta);
+        var desdePrev = desde.minus(dur);
+        var hastaPrev = desde;
+        var prev = kpiRepo.kpiCategoriaTotal(desdePrev, hastaPrev, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        // Mismo periodo año anterior (YoY)
+        var desdeYoY = desde.minusYears(1);
+        var hastaYoY = hasta.minusYears(1);
+        var yoy = kpiRepo.kpiCategoriaTotal(desdeYoY, hastaYoY, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        // Total ingresos período actual para aporte
+        var totalIngresos = actual.stream()
+                .map(r -> nz(r.getIngresos()))
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+
+        // Mapas para variaciones
+        var prevMap = prev.stream().collect(java.util.stream.Collectors.toMap(
+                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getCategoriaId,
+                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getIngresos));
+        var yoyMap = yoy.stream().collect(java.util.stream.Collectors.toMap(
+                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getCategoriaId,
+                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getIngresos));
+
+        var out = new java.util.ArrayList<KpiCategoriaDTO>();
+        for (var r : actual) {
+            var ingresosAct = nz(r.getIngresos());
+            var aporte = pct(ingresosAct, totalIngresos);
+
+            var basePrev = nz(prevMap.get(r.getCategoriaId()));
+            var varMes = growthPct(ingresosAct, basePrev);
+
+            var baseYoy = nz(yoyMap.get(r.getCategoriaId()));
+            var varYoy = growthPct(ingresosAct, baseYoy);
+
+            out.add(KpiCategoriaDTO.builder()
+                    .categoriaId(r.getCategoriaId())
+                    .categoria(r.getCategoria())
+                    .unidades(r.getUnidades() == null ? 0L : r.getUnidades())
+                    .ingresos(ingresosAct)
+                    .aportePct(aporte)
+                    .variacionMesPct(varMes)
+                    .variacionYoYPct(varYoy)
+                    .build());
+        }
+        return out;
+    }
+
     // ================= Helpers privados =================
     private static String nvl (String s) { return s == null ? "" : s; }
 
@@ -412,7 +469,9 @@ public class ReporteServiceImpl implements ReporteService{
         }
     }
 
-    private static int nz(Integer v) { return v == null ? 0 : v; }
+    private static int nz(Integer v) { 
+        return v == null ? 0 : v; 
+    }
     private static long nzL(Long v) { return v == null ? 0L : v; }
     private static BigDecimal nzBD(BigDecimal v) { return v == null ? BigDecimal.ZERO : v; }
 
@@ -444,5 +503,20 @@ public class ReporteServiceImpl implements ReporteService{
             })
             .thenComparing(aporteGetter, Comparator.nullsLast(Comparator.reverseOrder()))
         );
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
+    private static BigDecimal pct(BigDecimal num, BigDecimal den) {
+        if (den == null || den.compareTo(BigDecimal.ZERO) == 0) return null;
+        return num.multiply(BigDecimal.valueOf(100))
+                .divide(den, 2, RoundingMode.HALF_UP);
+    }
+    private static BigDecimal growthPct(BigDecimal actual, BigDecimal base) {
+        if (base == null || base.compareTo(BigDecimal.ZERO) == 0) return null;
+        return actual.subtract(base)
+                    .multiply(BigDecimal.valueOf(100))
+                    .divide(base, 2, RoundingMode.HALF_UP);
     }
 }

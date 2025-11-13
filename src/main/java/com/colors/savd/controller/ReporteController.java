@@ -1,5 +1,6 @@
 package com.colors.savd.controller;
 
+import com.colors.savd.dto.KpiCategoriaDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
 import com.colors.savd.dto.KpiSkuMesDTO;
 import com.colors.savd.dto.TopProductoDTO;
@@ -86,5 +87,17 @@ public class ReporteController {
       return reporteService.kpiSkuMensual(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
 
+  @GetMapping(path = "/kpis/categoria", produces = MediaType.APPLICATION_JSON_VALUE)
+  public List<KpiCategoriaDTO> kpisCategoria(
+        @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
+        @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
+        @RequestParam(value = "canalId",     required = false) Long canalId,
+        @RequestParam(value = "temporadaId", required = false) Long temporadaId,
+        @RequestParam(value = "categoriaId", required = false) Long categoriaId,
+        @RequestParam(value = "tallaId",     required = false) Long tallaId,
+        @RequestParam(value = "colorId",     required = false) Long colorId
+  ){
+    return reporteService.kpiPorCategoria(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+  }
 }
 
