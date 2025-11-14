@@ -1,7 +1,9 @@
 package com.colors.savd.controller;
 
 import com.colors.savd.dto.KpiCategoriaDTO;
+import com.colors.savd.dto.KpiProductoDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
+import com.colors.savd.dto.KpiSkuDTO;
 import com.colors.savd.dto.KpiSkuMesDTO;
 import com.colors.savd.dto.TopProductoDTO;
 import com.colors.savd.service.ReporteService;
@@ -99,5 +101,32 @@ public class ReporteController {
   ){
     return reporteService.kpiPorCategoria(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
+
+  @GetMapping(path = "/kpis/producto", produces = MediaType.APPLICATION_JSON_VALUE)
+  public List<KpiProductoDTO> kpisProducto(
+          @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
+          @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
+          @RequestParam(value = "canalId",     required = false) Long canalId,
+          @RequestParam(value = "temporadaId", required = false) Long temporadaId,
+          @RequestParam(value = "categoriaId", required = false) Long categoriaId,
+          @RequestParam(value = "tallaId",     required = false) Long tallaId,
+          @RequestParam(value = "colorId",     required = false) Long colorId
+  ) {
+      return reporteService.kpiPorProducto(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+  }
+
+  @GetMapping(path = "/kpis/sku", produces = MediaType.APPLICATION_JSON_VALUE)
+  public List<KpiSkuDTO> kpisSku(
+          @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
+          @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
+          @RequestParam(value = "canalId",     required = false) Long canalId,
+          @RequestParam(value = "temporadaId", required = false) Long temporadaId,
+          @RequestParam(value = "categoriaId", required = false) Long categoriaId,
+          @RequestParam(value = "tallaId",     required = false) Long tallaId,
+          @RequestParam(value = "colorId",     required = false) Long colorId
+  ) {
+      return reporteService.kpiPorSku(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+  }
+
 }
 

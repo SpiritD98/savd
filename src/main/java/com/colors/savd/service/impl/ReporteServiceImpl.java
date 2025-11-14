@@ -2,6 +2,7 @@ package com.colors.savd.service.impl;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -18,7 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 import com.colors.savd.dto.AlertaStockDTO;
 import com.colors.savd.dto.KpiCategoriaDTO;
 import com.colors.savd.dto.KpiCategoriaMesDTO;
+import com.colors.savd.dto.KpiProductoDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
+import com.colors.savd.dto.KpiSkuDTO;
 import com.colors.savd.dto.KpiSkuMesDTO;
 import com.colors.savd.dto.TopProductoDTO;
 import com.colors.savd.exception.BusinessException;
@@ -29,6 +32,9 @@ import com.colors.savd.repository.KpiRepository;
 import com.colors.savd.repository.ParametroReposicionRepository;
 import com.colors.savd.repository.VarianteSkuRepository;
 import com.colors.savd.repository.VentaRepository;
+import com.colors.savd.repository.projection.KpiAggCategoriaTotal;
+import com.colors.savd.repository.projection.KpiAggProductoTotal;
+import com.colors.savd.repository.projection.KpiAggSkuTotal;
 import com.colors.savd.repository.projection.TopProductoAgg;
 import com.colors.savd.service.ReporteService;
 import com.colors.savd.util.ExcelUtil;
@@ -45,7 +51,6 @@ public class ReporteServiceImpl implements ReporteService{
     private final VarianteSkuRepository varianteSkuRepo;
     private final ExcelUtil excelUtil;
     private final KpiRepository kpiRepo;
-
 
     @Override
     @Transactional(readOnly = true)
@@ -410,7 +415,7 @@ public class ReporteServiceImpl implements ReporteService{
         var actual = kpiRepo.kpiCategoriaTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
 
         // Periodo anterior de igual duración
-        var dur = java.time.Duration.between(desde, hasta);
+        var dur = Duration.between(desde, hasta);
         var desdePrev = desde.minus(dur);
         var hastaPrev = desde;
         var prev = kpiRepo.kpiCategoriaTotal(desdePrev, hastaPrev, canalId, temporadaId, categoriaId, tallaId, colorId);
@@ -423,17 +428,17 @@ public class ReporteServiceImpl implements ReporteService{
         // Total ingresos período actual para aporte
         var totalIngresos = actual.stream()
                 .map(r -> nz(r.getIngresos()))
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         // Mapas para variaciones
-        var prevMap = prev.stream().collect(java.util.stream.Collectors.toMap(
-                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getCategoriaId,
-                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getIngresos));
-        var yoyMap = yoy.stream().collect(java.util.stream.Collectors.toMap(
-                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getCategoriaId,
-                com.colors.savd.repository.projection.KpiAggCategoriaTotal::getIngresos));
+        var prevMap = prev.stream().collect(Collectors.toMap(
+                KpiAggCategoriaTotal::getCategoriaId,
+                KpiAggCategoriaTotal::getIngresos));
+        var yoyMap = yoy.stream().collect(Collectors.toMap(
+                KpiAggCategoriaTotal::getCategoriaId,
+                KpiAggCategoriaTotal::getIngresos));
 
-        var out = new java.util.ArrayList<KpiCategoriaDTO>();
+        var out = new ArrayList<KpiCategoriaDTO>();
         for (var r : actual) {
             var ingresosAct = nz(r.getIngresos());
             var aporte = pct(ingresosAct, totalIngresos);
@@ -456,6 +461,96 @@ public class ReporteServiceImpl implements ReporteService{
         }
         return out;
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<KpiProductoDTO> kpiPorProducto(LocalDateTime desde, LocalDateTime hasta,
+                                            Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+        var actual = kpiRepo.kpiProductoTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var dur = java.time.Duration.between(desde, hasta);
+        var desdePrev = desde.minus(dur);
+        var hastaPrev = desde;
+        var prev = kpiRepo.kpiProductoTotal(desdePrev, hastaPrev, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var desdeYoY = desde.minusYears(1);
+        var hastaYoY = hasta.minusYears(1);
+        var yoy = kpiRepo.kpiProductoTotal(desdeYoY, hastaYoY, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var totalIngresos = actual.stream()
+                .map(r -> nz(r.getIngresos()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        var prevMap = prev.stream().collect(java.util.stream.Collectors.toMap(
+                KpiAggProductoTotal::getProductoId,
+                KpiAggProductoTotal::getIngresos));
+
+        var yoyMap = yoy.stream().collect(java.util.stream.Collectors.toMap(
+                KpiAggProductoTotal::getProductoId,
+                KpiAggProductoTotal::getIngresos));
+
+        var out = new java.util.ArrayList<KpiProductoDTO>();
+        for (var r : actual) {
+            var ingresosAct = nz(r.getIngresos());
+            out.add(KpiProductoDTO.builder()
+                    .productoId(r.getProductoId())
+                    .producto(r.getProducto())
+                    .unidades(r.getUnidades() == null ? 0L : r.getUnidades())
+                    .ingresos(ingresosAct)
+                    .aportePct(pct(ingresosAct, totalIngresos))
+                    .variacionMesPct(growthPct(ingresosAct, nz(prevMap.get(r.getProductoId()))))
+                    .variacionYoYPct(growthPct(ingresosAct, nz(yoyMap.get(r.getProductoId()))))
+                    .build());
+        }
+        return out;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<KpiSkuDTO> kpiPorSku(LocalDateTime desde, LocalDateTime hasta,
+                                    Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+        var actual = kpiRepo.kpiSkuTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var dur = java.time.Duration.between(desde, hasta);
+        var desdePrev = desde.minus(dur);
+        var hastaPrev = desde;
+        var prev = kpiRepo.kpiSkuTotal(desdePrev, hastaPrev, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var desdeYoY = desde.minusYears(1);
+        var hastaYoY = hasta.minusYears(1);
+        var yoy = kpiRepo.kpiSkuTotal(desdeYoY, hastaYoY, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        var totalIngresos = actual.stream()
+                .map(r -> nz(r.getIngresos()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        var prevMap = prev.stream().collect(Collectors.toMap(
+                KpiAggSkuTotal::getSkuId,
+                KpiAggSkuTotal::getIngresos));
+
+        var yoyMap = yoy.stream().collect(Collectors.toMap(
+                KpiAggSkuTotal::getSkuId,
+                KpiAggSkuTotal::getIngresos));
+
+        var out = new java.util.ArrayList<KpiSkuDTO>();
+        for (var r : actual) {
+            var ingresosAct = nz(r.getIngresos());
+            out.add(KpiSkuDTO.builder()
+                    .skuId(r.getSkuId())
+                    .sku(r.getSku())
+                    .producto(r.getProducto())
+                    .talla(r.getTalla())
+                    .color(r.getColor())
+                    .unidades(r.getUnidades() == null ? 0L : r.getUnidades())
+                    .ingresos(ingresosAct)
+                    .aportePct(pct(ingresosAct, totalIngresos))
+                    .variacionMesPct(growthPct(ingresosAct, nz(prevMap.get(r.getSkuId()))))
+                    .variacionYoYPct(growthPct(ingresosAct, nz(yoyMap.get(r.getSkuId()))))
+                    .build());
+        }
+        return out;
+    }
+
 
     // ================= Helpers privados =================
     private static String nvl (String s) { return s == null ? "" : s; }
