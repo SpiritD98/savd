@@ -1,6 +1,7 @@
 package com.colors.savd.controller;
 
 import com.colors.savd.dto.KpiCategoriaDTO;
+import com.colors.savd.dto.KpiCategoriaMesDTO;
 import com.colors.savd.dto.KpiProductoDTO;
 import com.colors.savd.dto.KpiProductoMesDTO;
 import com.colors.savd.dto.KpiSkuDTO;
@@ -89,7 +90,7 @@ public class ReporteController {
       return reporteService.kpiSkuMensual(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
 
-  @GetMapping(path = "/kpis/categoria", produces = MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(path = "/kpis/categoria/total", produces = MediaType.APPLICATION_JSON_VALUE)
   public List<KpiCategoriaDTO> kpisCategoria(
         @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
         @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
@@ -102,7 +103,7 @@ public class ReporteController {
     return reporteService.kpiPorCategoria(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
 
-  @GetMapping(path = "/kpis/producto", produces = MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(path = "/kpis/producto/total", produces = MediaType.APPLICATION_JSON_VALUE)
   public List<KpiProductoDTO> kpisProducto(
           @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
           @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
@@ -115,7 +116,7 @@ public class ReporteController {
       return reporteService.kpiPorProducto(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
 
-  @GetMapping(path = "/kpis/sku", produces = MediaType.APPLICATION_JSON_VALUE)
+  @GetMapping(path = "/kpis/sku/total", produces = MediaType.APPLICATION_JSON_VALUE)
   public List<KpiSkuDTO> kpisSku(
           @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
           @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
@@ -128,5 +129,17 @@ public class ReporteController {
       return reporteService.kpiPorSku(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
   }
 
+  @GetMapping(path = "/kpis/categoria", produces = MediaType.APPLICATION_JSON_VALUE)
+  public List<KpiCategoriaMesDTO> kpiCategoria(
+        @RequestParam("desde") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime desde,
+        @RequestParam("hasta") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime hasta,
+        @RequestParam(value = "canalId", required = false) Long canalId,
+        @RequestParam(value = "temporadaId", required = false) Long temporadaId,
+        @RequestParam(value = "categoriaId", required = false) Long categoriaId,
+        @RequestParam(value = "tallaId", required = false) Long tallaId,
+        @RequestParam(value = "colorId", required = false) Long colorId
+  ) {
+    return reporteService.kpiCategoriaMensual(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+  }
 }
 

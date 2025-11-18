@@ -3,9 +3,13 @@ package com.colors.savd.repository;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
+import com.colors.savd.model.VentaDetalle;
 import com.colors.savd.repository.projection.KpiAggCategoria;
 import com.colors.savd.repository.projection.KpiAggCategoriaTotal;
 import com.colors.savd.repository.projection.KpiAggProducto;
@@ -13,7 +17,9 @@ import com.colors.savd.repository.projection.KpiAggProductoTotal;
 import com.colors.savd.repository.projection.KpiAggSku;
 import com.colors.savd.repository.projection.KpiAggSkuTotal;
 
-public interface KpiRepository {
+@Repository
+@Transactional(readOnly = true)
+public interface KpiRepository extends JpaRepository<VentaDetalle, Long>{
     @Query(value = """
             SELECT 
                 YEAR(v.fecha_hora)       AS anio,

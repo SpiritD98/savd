@@ -12,6 +12,12 @@ import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.ClientAnchor.AnchorType;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xddf.usermodel.chart.*;
+import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
+import org.apache.poi.xssf.usermodel.XSSFDrawing;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
 
@@ -130,6 +136,120 @@ public class ExcelUtil {
             }
         }
         return result.isEmpty() ? null : result;
+    }
+
+
+    private void agregarChartBarrasTop15Ingresos(XSSFSheet sheet, int firstDataRow, int lastDataRow, int colCategoria, int colValor) {
+        // Dibujo y ancla (col1,row1) -> (col2,row2)
+        XSSFDrawing drawing = sheet.createDrawingPatriarch();
+        XSSFClientAnchor anchor = new XSSFClientAnchor();
+        anchor.setCol1(8);  // ubica a la derecha de la tabla
+        anchor.setRow1(0);
+        anchor.setCol2(16);
+        anchor.setRow2(18);
+        anchor.setAnchorType(AnchorType.MOVE_AND_RESIZE);
+
+        XDDFChart chart = drawing.createChart(anchor);
+        chart.setTitleText("Top 15 por Ingresos");
+        chart.setTitleOverlay(false);
+
+        XDDFChartLegend legend = chart.getOrAddLegend();
+        legend.setPosition(LegendPosition.TOP_RIGHT);
+
+        XDDFCategoryAxis bottomAxis = chart.createCategoryAxis(AxisPosition.BOTTOM);
+        bottomAxis.setTitle("Producto");
+        XDDFValueAxis leftAxis = chart.createValueAxis(AxisPosition.LEFT);
+        leftAxis.setTitle("Ingresos (S/.)");
+        leftAxis.setCrosses(AxisCrosses.AUTO_ZERO);
+
+        // Rango de categorías y valores
+        CellRangeAddress catRange = new CellRangeAddress(firstDataRow, lastDataRow, colCategoria, colCategoria);
+        CellRangeAddress valRange = new CellRangeAddress(firstDataRow, lastDataRow, colValor, colValor);
+
+        XDDFCategoryDataSource categorias = XDDFDataSourcesFactory.fromStringCellRange(sheet, catRange);
+        XDDFNumericalDataSource<Double> valores = XDDFDataSourcesFactory.fromNumericCellRange(sheet, valRange);
+
+        XDDFChartData data = chart.createData(ChartTypes.BAR, bottomAxis, leftAxis);
+        XDDFChartData.Series series = data.addSeries(categorias, valores);
+        series.setTitle("Ingresos", null);
+        chart.plot(data);
+
+        // Barras verticales
+        XDDFBarChartData bar = (XDDFBarChartData) data;
+        bar.setBarDirection(BarDirection.COL);
+        bar.setBarGrouping(BarGrouping.CLUSTERED);
+        bar.setVaryColors(true);
+    }
+
+    private void agregarChartPieTop15Ingresos(XSSFSheet sheet, int firstDataRow, int lastDataRow, int colCategoria, int colValor) {
+        XSSFDrawing drawing = sheet.createDrawingPatriarch();
+        XSSFClientAnchor anchor = new XSSFClientAnchor();
+        anchor.setCol1(8);
+        anchor.setRow1(19);
+        anchor.setCol2(16);
+        anchor.setRow2(38);
+        anchor.setAnchorType(AnchorType.MOVE_AND_RESIZE);
+
+        XDDFChart chart = drawing.createChart(anchor);
+        chart.setTitleText("% Aporte de Ingresos (Top15)");
+        chart.setTitleOverlay(false);
+
+        CellRangeAddress catRange = new CellRangeAddress(firstDataRow, lastDataRow, colCategoria, colCategoria);
+        CellRangeAddress valRange = new CellRangeAddress(firstDataRow, lastDataRow, colValor, colValor);
+
+        XDDFCategoryDataSource categorias = XDDFDataSourcesFactory.fromStringCellRange(sheet, catRange);
+        XDDFNumericalDataSource<Double> valores = XDDFDataSourcesFactory.fromNumericCellRange(sheet, valRange);
+
+        XDDFChartData data = chart.createData(ChartTypes.PIE, null, null);
+        XDDFChartData.Series s = data.addSeries(categorias, valores);
+        s.setTitle("Aporte", null);
+        chart.plot(data);
+    }
+
+    private void agregarChartBarrasAlertasStock(XSSFSheet sheet, int firstDataRow, int lastDataRow, int colSku, int colStockActual, int colRop) {
+        XSSFDrawing drawing = sheet.createDrawingPatriarch();
+        XSSFClientAnchor anchor = new XSSFClientAnchor();
+        anchor.setCol1(8);
+        anchor.setRow1(0);
+        anchor.setCol2(16);
+        anchor.setRow2(22);
+        anchor.setAnchorType(AnchorType.MOVE_AND_RESIZE);
+
+        XDDFChart chart = drawing.createChart(anchor);
+        chart.setTitleText("StockActual vs ROP");
+        chart.setTitleOverlay(false);
+
+        XDDFChartLegend legend = chart.getOrAddLegend();
+        legend.setPosition(LegendPosition.TOP_RIGHT);
+
+        XDDFCategoryAxis bottomAxis = chart.createCategoryAxis(AxisPosition.BOTTOM);
+        bottomAxis.setTitle("SKU");
+        XDDFValueAxis leftAxis = chart.createValueAxis(AxisPosition.LEFT);
+        leftAxis.setTitle("Unidades");
+        leftAxis.setCrosses(AxisCrosses.AUTO_ZERO);
+
+        CellRangeAddress catRange = new CellRangeAddress(firstDataRow, lastDataRow, colSku, colSku);
+        XDDFCategoryDataSource categorias = XDDFDataSourcesFactory.fromStringCellRange(sheet, catRange);
+
+        // Serie 1: StockActual
+        CellRangeAddress valStock = new CellRangeAddress(firstDataRow, lastDataRow, colStockActual, colStockActual);
+        XDDFNumericalDataSource<Double> stock = XDDFDataSourcesFactory.fromNumericCellRange(sheet, valStock);
+
+        // Serie 2: ROP
+        CellRangeAddress valRop = new CellRangeAddress(firstDataRow, lastDataRow, colRop, colRop);
+        XDDFNumericalDataSource<Double> rop = XDDFDataSourcesFactory.fromNumericCellRange(sheet, valRop);
+
+        XDDFChartData data = chart.createData(ChartTypes.BAR, bottomAxis, leftAxis);
+        XDDFChartData.Series s1 = data.addSeries(categorias, stock);
+        s1.setTitle("StockActual", null);
+        XDDFChartData.Series s2 = data.addSeries(categorias, rop);
+        s2.setTitle("ROP", null);
+        chart.plot(data);
+
+        XDDFBarChartData bar = (XDDFBarChartData) data;
+        bar.setBarDirection(BarDirection.COL);
+        bar.setBarGrouping(BarGrouping.CLUSTERED);
+        bar.setVaryColors(false);
     }
 
     /** Busca en la fila (texto ya normalizado) el primer índice de columna que coincida con alguno de los alias */
@@ -301,6 +421,17 @@ public class ExcelUtil {
             }
             autosize(s1, cols1.length);
 
+            // === Gráficos en Top15 ===
+            // OJO: 'r' es el contador de filas que ya usaste arriba para Top15.
+            // Si reutilizaste 'r' para la hoja 2, captura aquí su valor cuando termines Top15.
+            int topLastRow = r - 1; 
+            if (topLastRow >= 1) {
+                agregarChartBarrasTop15Ingresos((XSSFSheet) s1, 1, topLastRow,
+                    2 /*col 'producto'*/, 6 /*col 'ingresos'*/);
+                agregarChartPieTop15Ingresos((XSSFSheet) s1, 1, topLastRow,
+                    2 /*producto*/, 6 /*ingresos*/);
+            }
+
             //Hoja 2: Alertas
             Sheet s2 = wb.createSheet("Alertas");
             r = 0;
@@ -325,6 +456,13 @@ public class ExcelUtil {
                 }
             }
             autosize(s2, cols2.length);
+
+            // Si para “Alertas” reiniciaste r = 0 y luego lo fuiste incrementando igual que en Top15:
+            int alertasLastRow = r - 1;
+            if (alertasLastRow >= 1) {
+                agregarChartBarrasAlertasStock((XSSFSheet) s2, 1, alertasLastRow,
+                    1 /*sku*/, 2 /*stockActual*/, 5 /*rop*/);
+            }
 
             wb.write(bos);
             return bos.toByteArray();
