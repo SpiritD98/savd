@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.colors.savd.dto.MovimientoInventarioDTO;
@@ -43,7 +44,7 @@ public class InventarioServiceImpl implements InventarioService{
                 .orElseThrow(() -> new BusinessException("TipoMovimiento 'INICIAL' no configurado"));
 
         var userRef = usuarioRepo.getReferenceById(usuarioId);
-        LocalDateTime fecha = dto.getFechaHora() != null ? dto.getFechaHora() : LocalDateTime.now();
+        LocalDateTime fecha = (dto.getFechaHora() != null ? dto.getFechaHora() : LocalDateTime.now()).withNano(0);
 
         var k = new KardexMovimiento();
         k.setFechaHora(fecha);
@@ -56,7 +57,8 @@ public class InventarioServiceImpl implements InventarioService{
         k.setUsuario(userRef);
         k.setCreatedAt(LocalDateTime.now());
         k.setIdempotencyKey(generarIdemKey(sku.getId(), fecha, "INICIAL", dto.getReferencia()));
-        kardexRepo.save(k);
+        try { kardexRepo.save(k); } 
+        catch (DataIntegrityViolationException ex) { /* log + opcionalmente buscar y retornar el id existente */ }
 
         return k.getId();
     }
@@ -73,7 +75,7 @@ public class InventarioServiceImpl implements InventarioService{
                 .orElseThrow(() -> new BusinessException("TipoMovimiento 'INGRESO' no configurado"));
 
         var userRef = usuarioRepo.getReferenceById(usuarioId);
-        LocalDateTime fecha = dto.getFechaHora() != null ? dto.getFechaHora() : LocalDateTime.now();
+        LocalDateTime fecha = (dto.getFechaHora() != null ? dto.getFechaHora() : LocalDateTime.now()).withNano(0);
 
         CanalVenta canal = null;
         if (dto.getCanalId() != null) {
@@ -93,7 +95,8 @@ public class InventarioServiceImpl implements InventarioService{
         k.setUsuario(userRef);
         k.setCreatedAt(LocalDateTime.now());
         k.setIdempotencyKey(generarIdemKey(sku.getId(), fecha, "INGRESO", dto.getReferencia()));
-        kardexRepo.save(k);
+        try { kardexRepo.save(k); } 
+        catch (DataIntegrityViolationException ex) { /* log + opcionalmente buscar y retornar el id existente */ }
 
         return k.getId();
     }

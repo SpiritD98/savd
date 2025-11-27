@@ -12,30 +12,17 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.colors.savd.dto.AlertaStockDTO;
-import com.colors.savd.dto.KpiCategoriaDTO;
-import com.colors.savd.dto.KpiCategoriaMesDTO;
-import com.colors.savd.dto.KpiProductoDTO;
-import com.colors.savd.dto.KpiProductoMesDTO;
-import com.colors.savd.dto.KpiSkuDTO;
-import com.colors.savd.dto.KpiSkuMesDTO;
-import com.colors.savd.dto.TopProductoDTO;
+import com.colors.savd.dto.*;
 import com.colors.savd.exception.BusinessException;
 import com.colors.savd.model.ParametroReposicion;
 import com.colors.savd.model.VarianteSku;
-import com.colors.savd.repository.KardexRepository;
-import com.colors.savd.repository.KpiRepository;
-import com.colors.savd.repository.ParametroReposicionRepository;
-import com.colors.savd.repository.VarianteSkuRepository;
-import com.colors.savd.repository.VentaRepository;
-import com.colors.savd.repository.projection.KpiAggCategoriaTotal;
-import com.colors.savd.repository.projection.KpiAggProductoTotal;
-import com.colors.savd.repository.projection.KpiAggSkuTotal;
-import com.colors.savd.repository.projection.TopProductoAgg;
+import com.colors.savd.repository.*;
+import com.colors.savd.repository.projection.*;
 import com.colors.savd.service.ReporteService;
 import com.colors.savd.util.ExcelUtil;
 
@@ -54,6 +41,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "top15",
+        key = "T(com.colors.savd.cache.CacheKeys).top15(#desde,#hasta,#canalId)"
+    )
     public List<TopProductoDTO> top15(LocalDateTime desde, LocalDateTime hasta, Long canalId) {
         // validar y normalizar fechas
         validarRangoFechas(desde, hasta);
@@ -98,6 +89,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "alertasStock",
+        key = "T(com.colors.savd.cache.CacheKeys).alertas(#corte)"
+    )
     public List<AlertaStockDTO> alertasStock(LocalDateTime corte) {
         
         // si no mandan corte, usamos "ahora"
@@ -183,6 +178,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiCategoriaMensual",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiCategoriaMesDTO> kpiCategoriaMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
         
         validarYNormalizarRango(desde, hasta);
@@ -269,6 +268,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiProductoMensual",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiProductoMesDTO> kpiProductoMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
             Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
 
@@ -343,6 +346,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiSkuMensual",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiSkuMesDTO> kpiSkuMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
             Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
 
@@ -420,6 +427,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiCategoriaTotal",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiCategoriaDTO> kpiPorCategoria(LocalDateTime desde, LocalDateTime hasta,
                                                 Long canalId, Long temporadaId, Long categoriaId,
                                                 Long tallaId, Long colorId) {
@@ -476,6 +487,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiProductoTotal",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiProductoDTO> kpiPorProducto(LocalDateTime desde, LocalDateTime hasta,
                                             Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
         var actual = kpiRepo.kpiProductoTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
@@ -519,6 +534,10 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
+    @Cacheable(
+        cacheNames = "kpiSkuTotal",
+        key = "T(com.colors.savd.cache.CacheKeys).kpiKey(#desde,#hasta,#canalId,#temporadaId,#categoriaId,#tallaId,#colorId)"
+    )
     public List<KpiSkuDTO> kpiPorSku(LocalDateTime desde, LocalDateTime hasta,
                                     Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
         var actual = kpiRepo.kpiSkuTotal(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);

@@ -9,6 +9,7 @@ import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.cache.CacheManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -49,6 +50,7 @@ public class ImportacionServiceImpl implements ImportacionService {
   private final UsuarioRepository usuarioRepo;
   private final TemporadaRepository temporadaRepo;
   private final ExcelUtil excelUtil;
+  private final CacheManager cacheManager;
 
   // ====== Tipos y helpers internos ======
 
@@ -301,6 +303,9 @@ public class ImportacionServiceImpl implements ImportacionService {
         bit.setFilasError(err);
         bitacoraRepo.save(bit);
 
+        // === invalidar cachés de reportes: hay datos nuevos ===
+        evictReportCaches();
+
         return ImportResultadoDTO.builder()
             .bitacoraId(bit.getId())
             .filasOk(ok)
@@ -317,6 +322,15 @@ public class ImportacionServiceImpl implements ImportacionService {
         .erroresMuestra(erroresMuestra.size() > 10 ? erroresMuestra.subList(0, 10) : erroresMuestra)
         .build();
 
+  }
+
+  private void evictReportCaches() {
+    List<String> names = List.of("top15","kpiCategoriaMensual","kpiProductoMensual","kpiSkuMensual",
+                                "kpiCategoriaTotal","kpiProductoTotal","kpiSkuTotal","alertasStock");
+    for (String n : names) {
+      var c = cacheManager.getCache(n);
+      if (c != null) c.clear();
+    }
   }
 
   // === Helpers ===

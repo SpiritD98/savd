@@ -3,7 +3,11 @@ package com.colors.savd.service.impl;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -54,7 +58,7 @@ public class VentaServiceImpl implements VentaService {
     }
 
     // 3) Fecha efectiva (normalizada a segundos para consistencia / duplicidad)
-    LocalDateTime fechaEf = (dto.getFechaHora() != null) ? dto.getFechaHora() : LocalDateTime.now().withNano(0);
+    LocalDateTime fechaEf = (dto.getFechaHora() != null ? dto.getFechaHora() : LocalDateTime.now()).withNano(0);
 
     // 4) Chequeo de duplicidad por cabecera (si hay referencia)
     if (referencia != null && Boolean.TRUE.equals(ventaRepo.existsByFechaHoraAndCanal_IdAndReferenciaOrigen(fechaEf, canal.getId(), referencia))) {
@@ -78,7 +82,43 @@ public class VentaServiceImpl implements VentaService {
     Usuario userRef = usuarioRepo.findById(usuarioId)
     .orElseThrow(() -> new BusinessException("Usuario no encontrado id= " + usuarioId));
     
-    // 8) Crear Cabecera de Venta
+    // === 8) PRECHECK DE STOCK (antes de persistir nada) ===
+    // 8.1 Cargar SKUs y validar líneas (cantidad/precio)
+    Map<Long, VarianteSku> skuMap = new HashMap<>();
+    Set<Long> skuIdsSolicitados = new HashSet<>();
+    for (LineaVentaDTO it : dto.getItems()) {
+      VarianteSku sku = skuRepo.findById(it.getSkuId()).orElseThrow(() -> new BusinessException("SKU no encontrado: " + it.getSkuId()));
+      if (it.getCantidad() == null || it.getCantidad() <= 0) {
+        throw new BusinessException("Cantidad inválida para SKU " + sku.getSku());
+      }
+      if (it.getPrecioUnitario() == null || it.getPrecioUnitario().signum() < 0) {
+        throw new BusinessException("Precio unitario inválido para SKU " + sku.getSku());
+      }
+      skuMap.put(sku.getId(), sku);
+      skuIdsSolicitados.add(sku.getId());
+    }
+
+    // 8.2 Consultar stock disponible hasta la fecha de la venta (o ahora)
+    List<Object[]> stockRows = kardexRepo.stockPorSkuHasta(skuIdsSolicitados, fechaEf);
+    Map<Long, Long> stockMap = new HashMap<>();
+    for (Object[] r : stockRows) {
+      Long skuId = ((Number) r[0]).longValue();
+      Long stock = (r[1] == null) ? 0L : ((Number) r[1]).longValue();
+      stockMap.put(skuId, stock);
+    }
+
+    // 8.3 Verificar stock suficiente por línea
+    for (LineaVentaDTO it : dto.getItems()) {
+      long disp = stockMap.getOrDefault(it.getSkuId(), 0L);
+      if (disp < it.getCantidad()) {
+        VarianteSku sku = skuMap.get(it.getSkuId());
+        String skuTxt = (sku != null ? sku.getSku() : String.valueOf(it.getSkuId()));
+        throw new BusinessException("Stock insuficiente para SKU " + skuTxt +
+            " (disponible=" + disp + ", requerido=" + it.getCantidad() + ")");
+      }
+    }
+
+    // === 9) Crear Cabecera (recién aquí persisto) ===
     Venta v = new Venta();
     v.setFechaHora(fechaEf);
     v.setCanal(canal);
@@ -92,21 +132,11 @@ public class VentaServiceImpl implements VentaService {
 
     v = ventaRepo.save(v);
 
-    // 9) Iterar items
+    // 10) Iterar items
     BigDecimal total = BigDecimal.ZERO;
-
     for (LineaVentaDTO it : dto.getItems()) {
-      VarianteSku sku = skuRepo.findById(it.getSkuId())
-          .orElseThrow(() -> new BusinessException("SKU no encontrado: " + it.getSkuId()));
+      VarianteSku sku = skuMap.get(it.getSkuId()); // reutilizamos el cargado en precheck
 
-      if (it.getCantidad() == null || it.getCantidad() <= 0) {
-        throw new BusinessException("Cantidad inválida para SKU " + sku.getSku());
-      }
-      if (it.getPrecioUnitario() == null || it.getPrecioUnitario().signum() < 0) {
-        throw new BusinessException("Precio unitario inválido para SKU " + sku.getSku());
-      }
-
-      // Precio lista por línea (si vino), si no, el del SKU
       BigDecimal precioLista = (it.getPrecioLista() != null) ? it.getPrecioLista() : sku.getPrecioLista();
 
       // Detalle
@@ -144,12 +174,11 @@ public class VentaServiceImpl implements VentaService {
       try {
         kardexRepo.save(k);
       } catch (DataIntegrityViolationException ex) {
-        // Reintento / duplicado por clave de idempotencia: log y continuar
         log.warn("Conflicto de idempotencia en Kardex para venta={} det={}", v.getId(), det.getId());
       }
     }
 
-    // 10) Finalizar cabecera
+    // 11) Finalizar cabecera
     v.setTotal(total.setScale(2, RoundingMode.HALF_UP));
     v.setUpdatedAt(LocalDateTime.now());
     ventaRepo.save(v);
@@ -179,7 +208,7 @@ public class VentaServiceImpl implements VentaService {
     List<VentaDetalle> detalles = ventaDetRepo.findByVenta_Id(ventaId);
     for (VentaDetalle det : detalles) {
       KardexMovimiento k = new KardexMovimiento();
-      k.setFechaHora(LocalDateTime.now());
+      k.setFechaHora(v.getFechaHora());
       k.setTipo(tipoAnul);
       k.setSku(det.getSku());
       k.setCantidad(det.getCantidad());
