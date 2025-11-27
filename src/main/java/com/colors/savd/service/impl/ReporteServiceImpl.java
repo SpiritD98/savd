@@ -183,15 +183,21 @@ public class ReporteServiceImpl implements ReporteService{
 
     @Override
     @Transactional(readOnly = true)
-    public List<KpiCategoriaMesDTO> kpiCategoriaMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
-            Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+    public List<KpiCategoriaMesDTO> kpiCategoriaMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+        
+        validarYNormalizarRango(desde, hasta);
+        LocalDateTime desdeEf = desde.withNano(0);
+        LocalDateTime hastaEf = hasta.withNano(0);
 
         // 1) Traer agregación cruda        
-        var rows = kpiRepo.kpiCategoriaMensual(desde,hasta,canalId,temporadaId,categoriaId,tallaId,colorId);
+        var rows = kpiRepo.kpiCategoriaMensual(desdeEf,hastaEf,canalId,temporadaId,categoriaId,tallaId,colorId);
         if (rows == null || rows.isEmpty()) return List.of();
 
         // 2) Totales por (año, mes) para calcular aporte
         record Ym(int y, int m) {}
+        record Key(Long cat, int y, int m) {}
+
+        // Totales por mes para aporte
         Map<Ym, BigDecimal> totalIngresosMes = new HashMap<>();
         Map<Ym, Long> totalUnidadesMes = new HashMap<>();
 
@@ -202,8 +208,7 @@ public class ReporteServiceImpl implements ReporteService{
         }
 
         // 3) Indexar por (categoriaId, anio, mes) para variaciones
-        record Key(Long cat, int y, int m) {}
-        Map<Key, KpiCategoriaMesDTO> byKey = new HashMap<>();
+        Map<Key, KpiCategoriaMesDTO> idx = new HashMap<>();
         List<KpiCategoriaMesDTO> out = new ArrayList<>(rows.size());
 
         for (var r : rows) {
@@ -213,11 +218,7 @@ public class ReporteServiceImpl implements ReporteService{
 
             Long unidades  = nzL(r.getUnidades());
             BigDecimal ingresos = nzBD(r.getIngresos());
-            BigDecimal totalMes = totalIngresosMes.getOrDefault(ym, BigDecimal.ZERO);
-
-            BigDecimal aporte = totalMes.signum() == 0 
-                    ? BigDecimal.ZERO 
-                    : ingresos.divide(totalMes, 6, RoundingMode.HALF_UP); // proporción 0..1
+            BigDecimal aporte = safeDiv(ingresos, totalIngresosMes.get(ym), 6); // proporción 0..1
 
             var dto = KpiCategoriaMesDTO.builder()
                     .anio(anio)
@@ -230,29 +231,29 @@ public class ReporteServiceImpl implements ReporteService{
                     .build();
 
             out.add(dto);
-            byKey.put(new Key(r.getCategoriaId(), anio, mes), dto);
+            idx.put(new Key(r.getCategoriaId(), anio, mes), dto);
         }
 
         // 4) Variaciones vs mes anterior y YoY
         for (var dto : out) {
-            int anio = dto.getAnio();
-            int mes  = dto.getMes();
+            int y = dto.getAnio(), m = dto.getMes();
             Long cat = dto.getCategoriaId();
 
             // Mes anterior
-            int prevY = anio, prevM = mes - 1;
-            if (prevM == 0) { prevM = 12; prevY = anio - 1; }
-            var prev = byKey.get(new Key(cat, prevY, prevM));
+            int prevY = y, prevM = m - 1;
+            if (prevM == 0) { prevM = 12; prevY = y - 1; }
+
+            var prev = idx.get(new Key(cat, prevY, prevM));
             if (prev != null) {
-                dto.setVarMesAnteriorUnidades( varPct(dto.getUnidades(), prev.getUnidades()) );
-                dto.setVarMesAnteriorIngresos( varPct(dto.getIngresos(), prev.getIngresos()) );
+                dto.setVarMesAnteriorUnidades(varPct(dto.getUnidades(), prev.getUnidades()));
+                dto.setVarMesAnteriorIngresos(varPct(dto.getIngresos(), prev.getIngresos()));
             }
 
             // YoY (mismo mes, año - 1)
-            var yoy = byKey.get(new Key(cat, anio - 1, mes));
+            var yoy = idx.get(new Key(cat, y - 1, m));
             if (yoy != null) {
-                dto.setVarYoYUnidades( varPct(dto.getUnidades(), yoy.getUnidades()) );
-                dto.setVarYoYIngresos( varPct(dto.getIngresos(), yoy.getIngresos()) );
+                dto.setVarYoYUnidades(varPct(dto.getUnidades(), yoy.getUnidades()));
+                dto.setVarYoYIngresos(varPct(dto.getIngresos(), yoy.getIngresos()));
             }
         }
 
@@ -270,21 +271,24 @@ public class ReporteServiceImpl implements ReporteService{
     @Transactional(readOnly = true)
     public List<KpiProductoMesDTO> kpiProductoMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
             Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
-        var rows = kpiRepo.kpiProductoMensual(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+
+        validarYNormalizarRango(desde, hasta);
+        LocalDateTime desdeEf = desde.withNano(0);
+        LocalDateTime hastaEf = hasta.withNano(0);
+
+        var rows = kpiRepo.kpiProductoMensual(desdeEf, hastaEf, canalId, temporadaId, categoriaId, tallaId, colorId);
         if (rows == null || rows.isEmpty()) return List.of();
 
         record Ym(int y, int m) {}
         record Key(Long id, int y, int m) {}
 
-        // 1) Totales por mes (ingresos) para aporte
         Map<Ym, BigDecimal> totalIngresosMes = new HashMap<>();
         for (var r : rows) {
             Ym ym = new Ym(nz(r.getAnio()), nz(r.getMes()));
             totalIngresosMes.merge(ym, nzBD(r.getIngresos()), BigDecimal::add);
         }
 
-        // 2) Construcción de DTO + index para variaciones
-        Map<Key, KpiProductoMesDTO> index = new HashMap<>();
+        Map<Key, KpiProductoMesDTO> idx = new HashMap<>();
         List<KpiProductoMesDTO> out = new ArrayList<>(rows.size());
 
         for (var r : rows) {
@@ -293,9 +297,7 @@ public class ReporteServiceImpl implements ReporteService{
             Ym ym = new Ym(anio, mes);
 
             BigDecimal ingresos = nzBD(r.getIngresos());
-            BigDecimal aporte = totalIngresosMes.getOrDefault(ym, BigDecimal.ZERO).signum() == 0
-                    ? BigDecimal.ZERO
-                    : ingresos.divide(totalIngresosMes.get(ym), 6, RoundingMode.HALF_UP);
+            BigDecimal aporte = safeDiv(ingresos, totalIngresosMes.get(ym), 6);
 
             var dto = KpiProductoMesDTO.builder()
                     .anio(anio)
@@ -308,10 +310,9 @@ public class ReporteServiceImpl implements ReporteService{
                     .build();
 
             out.add(dto);
-            index.put(new Key(r.getProductoId(), anio, mes), dto);
+            idx.put(new Key(r.getProductoId(), anio, mes), dto);
         }
 
-        // 3) Variaciones Mes-1 y YoY
         for (var dto : out) {
             int y = dto.getAnio(), m = dto.getMes();
             Long id = dto.getProductoId();
@@ -319,28 +320,37 @@ public class ReporteServiceImpl implements ReporteService{
             int prevY = y, prevM = m - 1;
             if (prevM == 0) { prevM = 12; prevY = y - 1; }
 
-            var prev = index.get(new Key(id, prevY, prevM));
+            var prev = idx.get(new Key(id, prevY, prevM));
             if (prev != null) {
-                dto.setVarMesAnteriorUnidades( varPct(dto.getUnidades(), prev.getUnidades()) );
-                dto.setVarMesAnteriorIngresos( varPct(dto.getIngresos(), prev.getIngresos()) );
+                dto.setVarMesAnteriorUnidades(varPct(dto.getUnidades(), prev.getUnidades()));
+                dto.setVarMesAnteriorIngresos(varPct(dto.getIngresos(), prev.getIngresos()));
             }
 
-            var yoy = index.get(new Key(id, y - 1, m));
+            var yoy = idx.get(new Key(id, y - 1, m));
             if (yoy != null) {
-                dto.setVarYoYUnidades( varPct(dto.getUnidades(), yoy.getUnidades()) );
-                dto.setVarYoYIngresos( varPct(dto.getIngresos(), yoy.getIngresos()) );
+                dto.setVarYoYUnidades(varPct(dto.getUnidades(), yoy.getUnidades()));
+                dto.setVarYoYIngresos(varPct(dto.getIngresos(), yoy.getIngresos()));
             }
         }
 
-        ordenarKpi(out, KpiProductoMesDTO::getAporteMes);
+        out.sort(Comparator
+            .comparing(KpiProductoMesDTO::getAnio)
+            .thenComparing(KpiProductoMesDTO::getMes)
+            .thenComparing(KpiProductoMesDTO::getAporteMes, Comparator.nullsLast(Comparator.reverseOrder()))
+        );
         return out;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<KpiSkuMesDTO> kpiSkuMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId, Long temporadaId,
-            Long categoriaId, Long tallaId, Long colorId) {
-        var rows = kpiRepo.kpiSkuMensual(desde, hasta, canalId, temporadaId, categoriaId, tallaId, colorId);
+    public List<KpiSkuMesDTO> kpiSkuMensual(LocalDateTime desde, LocalDateTime hasta, Long canalId,
+            Long temporadaId, Long categoriaId, Long tallaId, Long colorId) {
+
+        validarYNormalizarRango(desde, hasta);
+        LocalDateTime desdeEf = desde.withNano(0);
+        LocalDateTime hastaEf = hasta.withNano(0);
+
+        var rows = kpiRepo.kpiSkuMensual(desdeEf, hastaEf, canalId, temporadaId, categoriaId, tallaId, colorId);
         if (rows == null || rows.isEmpty()) return List.of();
 
         record Ym(int y, int m) {}
@@ -352,7 +362,7 @@ public class ReporteServiceImpl implements ReporteService{
             totalIngresosMes.merge(ym, nzBD(r.getIngresos()), BigDecimal::add);
         }
 
-        Map<Key, KpiSkuMesDTO> index = new HashMap<>();
+        Map<Key, KpiSkuMesDTO> idx = new HashMap<>();
         List<KpiSkuMesDTO> out = new ArrayList<>(rows.size());
 
         for (var r : rows) {
@@ -361,9 +371,7 @@ public class ReporteServiceImpl implements ReporteService{
             Ym ym = new Ym(anio, mes);
 
             BigDecimal ingresos = nzBD(r.getIngresos());
-            BigDecimal aporte = totalIngresosMes.getOrDefault(ym, BigDecimal.ZERO).signum() == 0
-                    ? BigDecimal.ZERO
-                    : ingresos.divide(totalIngresosMes.get(ym), 6, RoundingMode.HALF_UP);
+            BigDecimal aporte = safeDiv(ingresos, totalIngresosMes.get(ym), 6);
 
             var dto = KpiSkuMesDTO.builder()
                     .anio(anio)
@@ -379,7 +387,7 @@ public class ReporteServiceImpl implements ReporteService{
                     .build();
 
             out.add(dto);
-            index.put(new Key(r.getSkuId(), anio, mes), dto);
+            idx.put(new Key(r.getSkuId(), anio, mes), dto);
         }
 
         for (var dto : out) {
@@ -389,20 +397,24 @@ public class ReporteServiceImpl implements ReporteService{
             int prevY = y, prevM = m - 1;
             if (prevM == 0) { prevM = 12; prevY = y - 1; }
 
-            var prev = index.get(new Key(id, prevY, prevM));
+            var prev = idx.get(new Key(id, prevY, prevM));
             if (prev != null) {
-                dto.setVarMesAnteriorUnidades( varPct(dto.getUnidades(), prev.getUnidades()) );
-                dto.setVarMesAnteriorIngresos( varPct(dto.getIngresos(), prev.getIngresos()) );
+                dto.setVarMesAnteriorUnidades(varPct(dto.getUnidades(), prev.getUnidades()));
+                dto.setVarMesAnteriorIngresos(varPct(dto.getIngresos(), prev.getIngresos()));
             }
 
-            var yoy = index.get(new Key(id, y - 1, m));
+            var yoy = idx.get(new Key(id, y - 1, m));
             if (yoy != null) {
-                dto.setVarYoYUnidades( varPct(dto.getUnidades(), yoy.getUnidades()) );
-                dto.setVarYoYIngresos( varPct(dto.getIngresos(), yoy.getIngresos()) );
+                dto.setVarYoYUnidades(varPct(dto.getUnidades(), yoy.getUnidades()));
+                dto.setVarYoYIngresos(varPct(dto.getIngresos(), yoy.getIngresos()));
             }
         }
 
-        ordenarKpi(out, KpiSkuMesDTO::getAporteMes);
+        out.sort(Comparator
+            .comparing(KpiSkuMesDTO::getAnio)
+            .thenComparing(KpiSkuMesDTO::getMes)
+            .thenComparing(KpiSkuMesDTO::getAporteMes, Comparator.nullsLast(Comparator.reverseOrder()))
+        );
         return out;
     }
 
@@ -553,7 +565,9 @@ public class ReporteServiceImpl implements ReporteService{
 
 
     // ================= Helpers privados =================
-    private static String nvl (String s) { return s == null ? "" : s; }
+    private static String nvl (String s) { 
+        return s == null ? "" : s; 
+    }
 
     private void validarRangoFechas(LocalDateTime desde, LocalDateTime hasta){
         if (desde == null || hasta == null) {
@@ -613,5 +627,20 @@ public class ReporteServiceImpl implements ReporteService{
         return actual.subtract(base)
                     .multiply(BigDecimal.valueOf(100))
                     .divide(base, 2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal safeDiv(BigDecimal num, BigDecimal den, int scale){
+        if (den == null || den.signum() == 0) return BigDecimal.ZERO;
+        if (num == null) return BigDecimal.ZERO;
+        return num.divide(den, scale, RoundingMode.HALF_UP); 
+    }
+
+    private static void validarYNormalizarRango(LocalDateTime desde, LocalDateTime hasta){
+        if (desde == null || hasta == null) {
+            throw new BusinessException("Debe especificar las fechas 'desde' y 'hasta'.");
+        }
+        if (desde.isAfter(hasta)) {
+            throw new BusinessException("'desde' no puede ser mayor que 'hasta'.");
+        }
     }
 }

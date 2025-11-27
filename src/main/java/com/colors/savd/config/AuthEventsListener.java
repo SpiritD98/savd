@@ -72,9 +72,5 @@ public class AuthEventsListener{
             }
             usuarioRepository.save(u);
         }
-
-        
     }
-
-    
 }
